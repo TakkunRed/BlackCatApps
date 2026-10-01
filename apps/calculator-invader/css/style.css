@@ -171,13 +171,13 @@ body {
 }
 
 .seg-display.main .seg-digit {
-  width: 14px;
-  height: 26px;
+  width: 22px;
+  height: 38px;
 }
 
 .seg-display.small .seg-digit {
-  width: 8px;
-  height: 14px;
+  width: 13px;
+  height: 22px;
 }
 
 .seg {
@@ -193,11 +193,11 @@ body {
 .seg-g { top: 50%; transform: translateY(-50%); }
 .seg-d { bottom: 0; }
 
-.seg-b, .seg-c, .seg-e, .seg-f { width: 2px; top: 2px; bottom: 2px; }
+.seg-b, .seg-c, .seg-e, .seg-f { width: 2px; }
 .seg-b, .seg-c { right: 0; }
 .seg-e, .seg-f { left: 0; }
-.seg-f, .seg-b { height: 46%; top: 1px; }
-.seg-e, .seg-c { height: 46%; bottom: 1px; }
+.seg-b, .seg-f { top: 1px; height: 46%; }
+.seg-c, .seg-e { bottom: 1px; height: 46%; }
 
 .seg-dp {
   position: absolute;
