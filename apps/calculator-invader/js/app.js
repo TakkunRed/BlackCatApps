@@ -173,6 +173,13 @@ window.addEventListener('keydown', (e) => {
 renderCalc();
 
 if ('serviceWorker' in navigator) {
+  // 新しいService Workerが制御を引き継いだら、古いキャッシュを見せ続けないよう1回だけ自動リロードする
+  let reloadedForUpdate = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloadedForUpdate) return;
+    reloadedForUpdate = true;
+    window.location.reload();
+  });
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   });
