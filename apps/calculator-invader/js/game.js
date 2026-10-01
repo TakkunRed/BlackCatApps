@@ -171,7 +171,12 @@ class InvaderGame {
         }
       }
 
-      this.field[hitIndex] = null;
+      // 詰めて後退: 倒した位置より自陣に近い敵たちを1つずつ後ろへ下げて隙間を埋める
+      // (空いた枠は自陣に一番近い0番目にできる)
+      for (let i = hitIndex; i > 0; i--) {
+        this.field[i] = this.field[i - 1];
+      }
+      this.field[0] = null;
       this._checkRoundClear();
     }
 

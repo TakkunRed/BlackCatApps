@@ -57,6 +57,24 @@ function assert(cond, label) {
   g.quit();
 }
 
+// 倒すと、それより自陣に近い敵は1つずつ後退して隙間を詰める(空き枠は自陣側=0番目にできる)
+{
+  const g = new InvaderGame(() => {});
+  g.start();
+  g.field[0] = { value: '1', isUFO: false };
+  g.field[1] = { value: '2', isUFO: false };
+  g.field[3] = { value: '7', isUFO: false }; // これを倒す
+  g.field[5] = { value: '9', isUFO: false }; // 倒した敵より遠いので動かない
+  while (g.aimValue !== '7') g.aim();
+  g.fire();
+  assert(g.field[0] === null, 'the frontmost lane opens up after the kill');
+  assert(g.field[1]?.value === '1', 'the invader that was closest retreats back by one lane');
+  assert(g.field[2]?.value === '2', 'the second-closest invader also retreats back by one lane');
+  assert(g.field[3] === null, 'the killed lane itself is empty (nothing was behind it to fill in)');
+  assert(g.field[5]?.value === '9', 'invaders farther out than the kill are untouched');
+  g.quit();
+}
+
 // 近いレーンに同じ数字が複数並んでいる場合、自陣に近い方から優先的に倒す
 {
   const g = new InvaderGame(() => {});
