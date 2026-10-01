@@ -1,17 +1,17 @@
 import { buildSegmentDisplay, renderToSegments } from './segmentDisplay.js';
 import { Calculator } from './calculator.js';
-import { InvaderGame } from './game.js';
+import { InvaderGame, MAX_LANES } from './game.js';
 
 const calc = new Calculator();
 const game = new InvaderGame(renderGame);
 
 const mainDigits = buildSegmentDisplay(document.getElementById('mainDisplay'), 10, true);
+const lineupDigits = buildSegmentDisplay(document.getElementById('lineupDisplay'), MAX_LANES);
 const aimDigits = buildSegmentDisplay(document.getElementById('aimDisplay'), 1);
 const lifeDigits = buildSegmentDisplay(document.getElementById('lifeDisplay'), 1);
-const invaderDigits = buildSegmentDisplay(document.getElementById('invaderDigit'), 1);
 
 const statusRow = document.getElementById('statusRow');
-const laneInvader = document.getElementById('laneInvader');
+const mainRow = document.getElementById('mainRow');
 const subLeft = document.getElementById('subLeft');
 const subRight = document.getElementById('subRight');
 
@@ -33,11 +33,18 @@ function beep(freq, durationMs, type = 'square') {
 }
 
 function renderCalc() {
+  mainRow.classList.remove('game-mode');
   renderToSegments(mainDigits, calc.displayValue);
   statusRow.classList.remove('visible');
-  laneInvader.classList.remove('visible');
   subLeft.textContent = '0';
   subRight.textContent = 'CALC';
+}
+
+function renderLineup(g) {
+  for (let i = 0; i < MAX_LANES; i++) {
+    const occ = i < g.laneCount ? g.field[i] : null;
+    renderToSegments([lineupDigits[i]], occ ? occ.value : ' ');
+  }
 }
 
 function renderGame(g) {
@@ -50,27 +57,19 @@ function renderGame(g) {
   renderToSegments(aimDigits, g.aimValue);
   renderToSegments(lifeDigits, String(Math.max(0, g.lives)));
 
-  if (g.current) {
-    laneInvader.classList.add('visible');
-    renderToSegments(invaderDigits, g.current.value);
-    // lane: laneCount(出現/遠い) -> 1(自陣直前) を 92%(右端)->4%(自陣側) にマッピング
-    const progress = (g.current.lane - 1) / (g.laneCount - 1);
-    const leftPct = 4 + progress * 88;
-    laneInvader.style.left = `${leftPct}%`;
-  } else {
-    laneInvader.classList.remove('visible');
-  }
-
   if (g.phase === 'playing') {
-    renderToSegments(mainDigits, String(g.totalScore));
+    mainRow.classList.add('game-mode');
+    renderLineup(g);
     subLeft.textContent = `${g.stage}-${g.round}`;
     subRight.textContent = `SHOT ${g.shotsThisRound}/30`;
   } else if (g.phase === 'roundClear') {
+    mainRow.classList.remove('game-mode');
     renderToSegments(mainDigits, String(g.roundScore));
     subLeft.textContent = `${g.stage}-${g.round} CLEAR`;
     subRight.textContent = 'FIREで次のラウンドへ';
     beep(880, 120);
   } else if (g.phase === 'gameOver') {
+    mainRow.classList.remove('game-mode');
     renderToSegments(mainDigits, String(g.totalScore));
     subLeft.textContent = `${g.stage}-${g.round} END`;
     subRight.textContent = `HI ${g.highScore}`;

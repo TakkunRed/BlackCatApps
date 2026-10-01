@@ -1,8 +1,12 @@
 // デジタルバトルゲーム(インベーダー)のロジック
 // CASIO SL-880 取扱説明書に記載のルールを参考にした再現実装。
 // 出典: https://support.casio.jp/storage/pdf/004/SL-880_WA_JA.pdf
+//
+// 複数のインベーダーが列(レーン)に並んで同時に自陣へ接近してくる。
+// field[0] が自陣に一番近いレーン、field[laneCount-1] が一番遠い(出現したばかりの)レーン。
 
 const STAGE_LANES = { 1: 6, 2: 5 };
+const MAX_LANES = 6;
 const STAGE_SCORE_TABLE = {
   1: [10, 20, 30, 40, 50, 60],
   2: [20, 40, 60, 80, 100],
@@ -39,7 +43,8 @@ class InvaderGame {
     this.sumDestroyedThisRound = 0;
     this.aimIndex = 0;
     this.queue = [];
-    this.current = null; // { value: '0'-'9', lane, isUFO }
+    this.pendingBonus = null; // UFO出現待ち
+    this.field = new Array(MAX_LANES).fill(null); // 自陣に並んで接近してくるインベーダー
     this._clearTimer();
   }
 
@@ -68,30 +73,18 @@ class InvaderGame {
 
   _startRound() {
     this.queue = Array.from({ length: INVADERS_PER_ROUND }, () => String(Math.floor(Math.random() * 10)));
+    this.pendingBonus = null;
     this.roundScore = 0;
     this.shotsThisRound = 0;
     this.sumDestroyedThisRound = 0;
-    this._spawnNext();
+    this.field = new Array(MAX_LANES).fill(null);
+    this._clearTimer();
+    this.timer = setInterval(() => this._tick(), this._tickInterval());
   }
 
   _tickInterval() {
     const ms = BASE_TICK_MS - (this.round - 1) * TICK_STEP_MS;
     return Math.max(MIN_TICK_MS, ms);
-  }
-
-  _spawnNext(forceUfo = false) {
-    this._clearTimer();
-    if (!forceUfo && this.queue.length === 0) {
-      this._roundClear();
-      return;
-    }
-    if (forceUfo) {
-      this.current = { value: 'n', lane: this.laneCount, isUFO: true };
-    } else {
-      const value = this.queue.shift();
-      this.current = { value, lane: this.laneCount, isUFO: false };
-    }
-    this.timer = setInterval(() => this._tick(), this._tickInterval());
   }
 
   _clearTimer() {
@@ -101,20 +94,47 @@ class InvaderGame {
     }
   }
 
+  _spawnValue() {
+    if (this.pendingBonus) {
+      const bonus = this.pendingBonus;
+      this.pendingBonus = null;
+      return bonus;
+    }
+    if (this.queue.length > 0) {
+      return { value: this.queue.shift(), isUFO: false };
+    }
+    return null;
+  }
+
   _tick() {
-    if (!this.current) return;
-    this.current.lane -= 1;
-    if (this.current.lane <= 0) {
-      this._clearTimer();
+    const laneCount = this.laneCount;
+    // 自陣に一番近いレーンのインベーダーは、このtickで自陣に到達する
+    const breached = this.field[0];
+    for (let i = 0; i < laneCount - 1; i++) {
+      this.field[i] = this.field[i + 1];
+    }
+    this.field[laneCount - 1] = this._spawnValue();
+    for (let i = laneCount; i < MAX_LANES; i++) this.field[i] = null;
+
+    if (breached && !breached.isUFO) {
       this.lives -= 1;
-      this.current = null;
       if (this.lives <= 0) {
         this._gameOver();
-      } else {
-        this._spawnNext();
+        return;
       }
     }
+
+    this._checkRoundClear();
     this._emit();
+  }
+
+  _checkRoundClear() {
+    if (this.phase !== 'playing') return;
+    const laneCount = this.laneCount;
+    const fieldEmpty = this.field.slice(0, laneCount).every((v) => v === null);
+    if (this.queue.length === 0 && !this.pendingBonus && fieldEmpty) {
+      this._roundClear();
+    }
   }
 
   aim() {
@@ -124,39 +144,35 @@ class InvaderGame {
   }
 
   fire() {
-    if (this.phase !== 'playing' || !this.current) return;
+    if (this.phase !== 'playing') return;
     this.shotsThisRound += 1;
 
-    const hit =
-      (this.current.isUFO && this.aimValue === 'n') ||
-      (!this.current.isUFO && this.aimValue === this.current.value);
+    const laneCount = this.laneCount;
+    let hitIndex = -1;
+    for (let i = 0; i < laneCount; i++) {
+      const occ = this.field[i];
+      if (!occ) continue;
+      const matches = (occ.isUFO && this.aimValue === 'n') || (!occ.isUFO && occ.value === this.aimValue);
+      if (matches) { hitIndex = i; break; }
+    }
 
-    if (hit) {
-      const lane = this.current.lane;
+    if (hitIndex !== -1) {
+      const occ = this.field[hitIndex];
       const table = STAGE_SCORE_TABLE[this.stage];
-      const points = this.current.isUFO ? UFO_BONUS : table[Math.min(lane, table.length) - 1] || table[0];
+      const points = occ.isUFO ? UFO_BONUS : table[hitIndex];
       this.roundScore += points;
       this.totalScore += points;
 
-      if (!this.current.isUFO) {
-        this.sumDestroyedThisRound += Number(this.current.value);
+      if (!occ.isUFO) {
+        this.sumDestroyedThisRound += Number(occ.value);
+        if (this.sumDestroyedThisRound > 0 && this.sumDestroyedThisRound % 10 === 0 && !this.pendingBonus && Math.random() < 0.6) {
+          this.pendingBonus = { value: 'n', isUFO: true };
+          this.sumDestroyedThisRound = 0;
+        }
       }
 
-      this._clearTimer();
-      this.current = null;
-
-      const shouldSpawnUfo =
-        !this.current &&
-        this.sumDestroyedThisRound > 0 &&
-        this.sumDestroyedThisRound % 10 === 0 &&
-        Math.random() < 0.6;
-
-      if (shouldSpawnUfo) {
-        this.sumDestroyedThisRound = 0; // 連続UFO出現を防ぐ
-        this._spawnNext(true);
-      } else {
-        this._spawnNext();
-      }
+      this.field[hitIndex] = null;
+      this._checkRoundClear();
     }
 
     if (this.shotsThisRound >= MAX_SHOTS_PER_ROUND && this.phase === 'playing') {
@@ -170,7 +186,6 @@ class InvaderGame {
   _roundClear() {
     this._clearTimer();
     this.phase = 'roundClear';
-    this._emit();
   }
 
   continueAfterRoundClear() {
@@ -189,7 +204,6 @@ class InvaderGame {
   _gameOver() {
     this._clearTimer();
     this.phase = 'gameOver';
-    this.current = null;
     if (this.totalScore > this.highScore) {
       this.highScore = this.totalScore;
       localStorage.setItem(HIGH_SCORE_KEY, String(this.highScore));
@@ -207,4 +221,4 @@ class InvaderGame {
   }
 }
 
-export { InvaderGame, AIM_SEQUENCE };
+export { InvaderGame, AIM_SEQUENCE, MAX_LANES };

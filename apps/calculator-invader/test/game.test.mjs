@@ -6,7 +6,7 @@ if (typeof globalThis.localStorage === 'undefined') {
   };
 }
 
-const { InvaderGame } = await import('../js/game.js');
+const { InvaderGame, MAX_LANES } = await import('../js/game.js');
 
 function assert(cond, label) {
   console.log(`${cond ? 'PASS' : 'FAIL'} ${label}`);
@@ -24,70 +24,121 @@ function assert(cond, label) {
   g.quit();
 }
 
-// Firing with matching aim destroys the invader and scores by lane (farther = more points)
+// 複数レーンに同時に敵が並ぶ(数字が並んで攻めてくる)
 {
   const g = new InvaderGame(() => {});
   g.start();
-  const firstValue = g.current.value; // stage1 lane=6 spawn
-  const laneAtSpawn = g.current.lane;
-  assert(laneAtSpawn === 6, 'stage1 invaders spawn at lane 6');
-
-  // aim を合わせる
-  while (g.aimValue !== firstValue) g.aim();
-  const beforeScore = g.totalScore;
-  g.fire();
-  assert(g.totalScore === beforeScore + 60, `farthest kill (lane6) scores 60 (got +${g.totalScore - beforeScore})`);
+  for (let i = 0; i < g.laneCount; i++) g._tick();
+  const occupied = g.field.slice(0, g.laneCount).filter((v) => v !== null).length;
+  assert(occupied >= 2, `multiple lanes occupied simultaneously (got ${occupied})`);
   g.quit();
 }
 
-// Missing a shot does not destroy the invader but still counts toward the 30-shot cap
+// 新しい敵はレーンの一番遠い位置(laneCount-1)に出現する
 {
   const g = new InvaderGame(() => {});
   g.start();
-  const wrongAim = g.current.value === '0' ? '1' : '0';
-  const idx = ['0','1','2','3','4','5','6','7','8','9','n'].indexOf(wrongAim);
-  g.aimIndex = idx;
-  const currentBefore = g.current;
+  g._tick();
+  assert(g.field[g.laneCount - 1] !== null, 'a new invader spawns at the farthest lane after a tick');
+  assert(g.field[0] === null, 'the nearest lane is still empty right after the first tick');
+  g.quit();
+}
+
+// 命中: 狙った数字と同じレーンの敵を倒し、距離に応じた得点が入る(遠いほど高得点)
+{
+  const g = new InvaderGame(() => {});
+  g.start();
+  g.field[5] = { value: '7', isUFO: false }; // stage1 最遠レーン(index5) = 60点
+  while (g.aimValue !== '7') g.aim();
+  const before = g.totalScore;
   g.fire();
-  assert(g.current === currentBefore, 'mismatched fire does not destroy invader');
+  assert(g.totalScore === before + 60, `farthest lane kill scores 60 (got +${g.totalScore - before})`);
+  assert(g.field[5] === null, 'destroyed invader is removed from its lane');
+  g.quit();
+}
+
+// 近いレーンに同じ数字が複数並んでいる場合、自陣に近い方から優先的に倒す
+{
+  const g = new InvaderGame(() => {});
+  g.start();
+  g.field[1] = { value: '4', isUFO: false }; // index1 = 20点
+  g.field[4] = { value: '4', isUFO: false }; // index4 = 50点
+  while (g.aimValue !== '4') g.aim();
+  const before = g.totalScore;
+  g.fire();
+  assert(g.totalScore === before + 20, 'closest matching lane is destroyed first');
+  assert(g.field[1] === null && g.field[4] !== null, 'only the closest match is removed');
+  g.quit();
+}
+
+// ミス: 狙いが外れていれば敵は残るが、弾数は消費される
+{
+  const g = new InvaderGame(() => {});
+  g.start();
+  g.field[2] = { value: '8', isUFO: false };
+  while (g.aimValue !== '1') g.aim();
+  g.fire();
+  assert(g.field[2] !== null, 'mismatched fire does not destroy the invader');
   assert(g.shotsThisRound === 1, 'shot count increments even on a miss');
   g.quit();
 }
 
-// Life lost when invader reaches the camp (lane hits 0)
+// 自陣(レーン0)に到達されるとライフが減る
 {
   const g = new InvaderGame(() => {});
   g.start();
   const livesBefore = g.lives;
-  g.current.lane = 1; // 次のtickで0になる想定なので手動で境界確認
+  g.field[0] = { value: '5', isUFO: false };
   g._tick();
-  assert(g.lives === livesBefore - 1, 'life decrements when invader reaches lane 0');
+  assert(g.lives === livesBefore - 1, 'life decrements when an invader reaches the nearest lane and the field shifts');
   g.quit();
 }
 
-// Game over when lives reach 0
+// UFOが自陣に到達してもライフは減らない(ボーナス敵のため)
+{
+  const g = new InvaderGame(() => {});
+  g.start();
+  const livesBefore = g.lives;
+  g.field[0] = { value: 'n', isUFO: true };
+  g._tick();
+  assert(g.lives === livesBefore, 'a missed UFO does not cost a life');
+  g.quit();
+}
+
+// ライフが0になるとゲームオーバー
 {
   const g = new InvaderGame(() => {});
   g.start();
   g.lives = 1;
-  g.current.lane = 1;
+  g.field[0] = { value: '5', isUFO: false };
   g._tick();
   assert(g.phase === 'gameOver', 'phase becomes gameOver when lives hit 0');
   g.quit();
 }
 
-// 30-shot cap ends the game
+// 1ラウンドでFIRE30回に達するとゲームオーバー
 {
   const g = new InvaderGame(() => {});
   g.start();
   for (let i = 0; i < 30; i++) {
-    // 絶対に外れる値を選んで撃ち続ける
-    const wrongAim = g.current && g.current.value === '0' ? '1' : '0';
-    const idx = ['0','1','2','3','4','5','6','7','8','9','n'].indexOf(wrongAim);
-    g.aimIndex = idx;
+    while (g.aimValue !== 'n') g.aim(); // フィールドに数字しかいないので常にミスさせる
     g.fire();
   }
-  assert(g.phase === 'gameOver', '30 misses in a round triggers game over');
+  assert(g.phase === 'gameOver', '30 shots in a round triggers game over');
+  g.quit();
+}
+
+// 全滅後、キューも空ならラウンドクリアになる
+{
+  const g = new InvaderGame(() => {});
+  g.start();
+  g.queue = [];
+  g.pendingBonus = null;
+  g.field = new Array(MAX_LANES).fill(null);
+  g.field[0] = { value: '9', isUFO: false };
+  while (g.aimValue !== '9') g.aim();
+  g.fire();
+  assert(g.phase === 'roundClear', 'round clears once the queue and field are both empty');
   g.quit();
 }
 
