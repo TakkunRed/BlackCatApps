@@ -8,6 +8,7 @@ const game = new InvaderGame(renderGame);
 const mainDigits = buildSegmentDisplay(document.getElementById('mainDisplay'), 10, true);
 const aimDigits = buildSegmentDisplay(document.getElementById('aimDisplay'), 1);
 const lifeDigits = buildSegmentDisplay(document.getElementById('lifeDisplay'), 1);
+const invaderDigits = buildSegmentDisplay(document.getElementById('invaderDigit'), 1);
 
 const statusRow = document.getElementById('statusRow');
 const laneInvader = document.getElementById('laneInvader');
@@ -51,6 +52,7 @@ function renderGame(g) {
 
   if (g.current) {
     laneInvader.classList.add('visible');
+    renderToSegments(invaderDigits, g.current.value);
     // lane: laneCount(出現/遠い) -> 1(自陣直前) を 92%(右端)->4%(自陣側) にマッピング
     const progress = (g.current.lane - 1) / (g.laneCount - 1);
     const leftPct = 4 + progress * 88;

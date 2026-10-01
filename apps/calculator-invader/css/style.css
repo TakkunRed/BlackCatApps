@@ -131,11 +131,9 @@ body {
 .lane-invader {
   position: absolute;
   left: 4px;
-  width: 12px;
-  height: 12px;
-  background: var(--seg-on);
-  clip-path: polygon(20% 0%, 80% 0%, 100% 40%, 100% 100%, 0% 100%, 0% 40%);
-  transition: left 0.15s linear;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  transition: left 0.5s linear;
   opacity: 0;
 }
 
