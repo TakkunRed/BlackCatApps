@@ -1,4 +1,4 @@
-const CACHE_NAME = 'calculator-invader-v1';
+const CACHE_NAME = 'calculator-invader-v2';
 const APP_SHELL = [
   './',
   './index.html',
@@ -29,16 +29,14 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  // ネットワーク優先: オンライン時は常に最新を取得し、オフライン時のみキャッシュにフォールバックする
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          return response;
-        })
-        .catch(() => cached);
-    })
+    fetch(event.request)
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
