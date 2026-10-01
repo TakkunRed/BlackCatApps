@@ -1,0 +1,10 @@
+{
+  "name": "calculator-invader",
+  "private": true,
+  "version": "0.1.0",
+  "description": "CASIO SL-880風の電卓シェルに載せた、7セグ風インベーダー撃墜ゲーム(PWA)",
+  "scripts": {
+    "dev": "npx --yes serve .",
+    "test": "node test/calculator.test.mjs && node test/game.test.mjs"
+  }
+}

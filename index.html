@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#0e0f11" />
+<title>Black Cat Apps</title>
+<meta name="description" content="レトロをテーマにしたスマホ向けPWAアプリ集" />
+<style>
+  :root { --bg:#0e0f11; --card:#1f2124; --accent:#e6572e; --text:#f1f1ef; --muted:#9a9ea3; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; background:var(--bg); color:var(--text); }
+  body {
+    min-height:100dvh;
+    display:flex; flex-direction:column; align-items:center;
+    padding:48px 16px;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans","Noto Sans JP",sans-serif;
+  }
+  h1 { font-size:22px; letter-spacing:0.08em; margin:0 0 4px; }
+  p.lead { color:var(--muted); font-size:13px; margin:0 0 32px; text-align:center; max-width:360px; }
+  .grid { width:100%; max-width:420px; display:flex; flex-direction:column; gap:12px; }
+  a.card {
+    display:flex; align-items:center; gap:14px;
+    background:var(--card); border-radius:14px; padding:16px;
+    text-decoration:none; color:var(--text);
+    box-shadow:0 6px 16px rgba(0,0,0,0.35);
+  }
+  a.card:active { transform: translateY(1px); }
+  .icon {
+    width:48px; height:48px; border-radius:10px; background:#101214;
+    display:flex; align-items:center; justify-content:center; font-size:22px; flex-shrink:0;
+  }
+  .meta { display:flex; flex-direction:column; gap:2px; }
+  .meta .title { font-size:15px; font-weight:600; }
+  .meta .desc { font-size:12px; color:var(--muted); }
+  .badge {
+    margin-left:auto; font-size:10px; letter-spacing:0.05em;
+    color:var(--accent); border:1px solid var(--accent); border-radius:999px;
+    padding:2px 8px; flex-shrink:0;
+  }
+  footer { margin-top:40px; font-size:11px; color:var(--muted); text-align:center; }
+</style>
+</head>
+<body>
+  <h1>BLACK CAT APPS</h1>
+  <p class="lead">レトロなガジェットをモチーフにした、ブラウザで遊べるスマホ向けPWAコレクション。</p>
+
+  <div class="grid">
+    <a class="card" href="apps/calculator-invader/">
+      <div class="icon">🧮</div>
+      <div class="meta">
+        <div class="title">電卓インベーダー</div>
+        <div class="desc">CASIO SL-880風 電卓 × 撃墜ゲーム</div>
+      </div>
+      <span class="badge">NEW</span>
+    </a>
+  </div>
+
+  <footer>今後も新しいレトロアプリを追加予定です。</footer>
+</body>
+</html>

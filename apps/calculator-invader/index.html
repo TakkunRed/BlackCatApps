@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#1b1d1f" />
+<title>電卓インベーダー</title>
+<meta name="description" content="レトロな太陽電池電卓を模した、数字で狙い撃つインベーダーゲーム。" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<main class="stage">
+  <div class="calculator" id="calculator">
+    <div class="brand-row">
+      <span class="brand">BLACK CAT CALC</span>
+      <span class="model">CI-880</span>
+    </div>
+
+    <div class="lcd-panel">
+      <div class="lcd-status-row" id="statusRow">
+        <div class="status-block">
+          <div class="status-label">AIM</div>
+          <div class="seg-display small" id="aimDisplay"></div>
+        </div>
+
+        <div class="lane-track" id="laneTrack" aria-hidden="true">
+          <div class="lane-base"></div>
+          <div class="lane-invader" id="laneInvader"></div>
+        </div>
+
+        <div class="status-block">
+          <div class="status-label">LIFE</div>
+          <div class="seg-display small" id="lifeDisplay"></div>
+        </div>
+      </div>
+
+      <div class="lcd-main-row">
+        <div class="seg-display main" id="mainDisplay"></div>
+      </div>
+
+      <div class="lcd-sub-row" id="subRow">
+        <span id="subLeft">0</span>
+        <span id="subRight">CALC</span>
+      </div>
+    </div>
+
+    <div class="keypad">
+      <button class="key key-fn" data-key="GAME">GAME</button>
+      <button class="key key-fn" data-key="AC">AC</button>
+      <button class="key key-op" data-key="%">% <small>SOUND</small></button>
+      <button class="key key-op" data-key="÷">÷</button>
+
+      <button class="key" data-key="7">7</button>
+      <button class="key" data-key="8">8</button>
+      <button class="key" data-key="9">9</button>
+      <button class="key key-op" data-key="×">×</button>
+
+      <button class="key" data-key="4">4</button>
+      <button class="key" data-key="5">5</button>
+      <button class="key" data-key="6">6</button>
+      <button class="key key-op" data-key="-">−</button>
+
+      <button class="key" data-key="1">1</button>
+      <button class="key" data-key="2">2</button>
+      <button class="key" data-key="3">3</button>
+      <button class="key key-op" data-key="+">+ <small>FIRE</small></button>
+
+      <button class="key key-wide" data-key="0">0</button>
+      <button class="key" data-key=".">• <small>AIM</small></button>
+      <button class="key key-eq" data-key="=">=</button>
+    </div>
+  </div>
+
+  <p class="credit">
+    ※本アプリは CASIO「ゲーム電卓 SL-880」へのオマージュとして独自に実装した非公式ファンメイド作品です。CASIO社とは関係ありません。
+  </p>
+</main>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
