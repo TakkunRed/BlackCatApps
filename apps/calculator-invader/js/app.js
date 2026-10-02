@@ -40,6 +40,17 @@ function renderCalc() {
   subRight.textContent = 'CALC';
 }
 
+function playInvaderSpawn(isUFO) {
+  if (isUFO) {
+    beep(520, 50, 'sawtooth');
+    setTimeout(() => beep(720, 60, 'sawtooth'), 55);
+    setTimeout(() => beep(520, 70, 'sawtooth'), 115);
+  } else {
+    beep(220, 55, 'square');
+    setTimeout(() => beep(150, 80, 'square'), 55);
+  }
+}
+
 function renderLineup(g) {
   for (let i = 0; i < MAX_LANES; i++) {
     const occ = i < g.laneCount ? g.field[i] : null;
@@ -56,6 +67,11 @@ function renderGame(g) {
   statusRow.classList.add('visible');
   renderToSegments(aimDigits, g.aimValue);
   renderToSegments(lifeDigits, String(Math.max(0, g.lives)));
+
+  if (g.justSpawned) {
+    playInvaderSpawn(g.justSpawned.isUFO);
+    g.justSpawned = null;
+  }
 
   if (g.phase === 'playing') {
     mainRow.classList.add('game-mode');

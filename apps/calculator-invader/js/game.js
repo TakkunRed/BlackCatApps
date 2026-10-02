@@ -45,6 +45,7 @@ class InvaderGame {
     this.queue = [];
     this.pendingBonus = null; // UFO出現待ち
     this.field = new Array(MAX_LANES).fill(null); // 自陣に並んで接近してくるインベーダー
+    this.justSpawned = null;
     this._clearTimer();
   }
 
@@ -115,6 +116,8 @@ class InvaderGame {
     }
     this.field[laneCount - 1] = this._spawnValue();
     for (let i = laneCount; i < MAX_LANES; i++) this.field[i] = null;
+    // 新規出現を描画側(効果音など)に伝えるための1回限りのフラグ。読み取り側が消費する。
+    this.justSpawned = this.field[laneCount - 1];
 
     if (breached && !breached.isUFO) {
       this.lives -= 1;

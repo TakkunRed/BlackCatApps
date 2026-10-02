@@ -110,8 +110,9 @@ body {
 .lcd-status-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
-  min-height: 30px;
+  min-height: 64px;
   opacity: 0;
   transform: translateY(-2px);
   transition: opacity 0.2s ease, transform 0.2s ease;
@@ -130,6 +131,12 @@ body {
   gap: 2px;
 }
 
+.aim-block {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .status-label {
   font-size: 8px;
   letter-spacing: 0.1em;
@@ -137,11 +144,10 @@ body {
   opacity: 0.55;
 }
 
-.status-spacer {
-  flex: 1;
-  height: 2px;
-  margin: 0 8px;
-  background: var(--seg-off);
+.aim-block .status-label {
+  writing-mode: vertical-rl;
+  letter-spacing: 0.15em;
+  opacity: 0.45;
 }
 
 .lcd-main-row {
@@ -171,6 +177,7 @@ body {
 }
 
 .seg-digit {
+  --seg-t: 2px;
   position: relative;
   width: 11px;
   height: 20px;
@@ -178,13 +185,22 @@ body {
 }
 
 .seg-display.main .seg-digit {
-  width: 22px;
-  height: 38px;
+  --seg-t: 3.4px;
+  width: 24px;
+  height: 42px;
 }
 
 .seg-display.small .seg-digit {
+  --seg-t: 2.6px;
   width: 13px;
   height: 22px;
+}
+
+.seg-display.aim-big .seg-digit {
+  --seg-t: 5px;
+  width: 36px;
+  height: 60px;
+  margin: 0 2px;
 }
 
 .seg {
@@ -196,7 +212,7 @@ body {
 .seg.on { background: var(--seg-on); }
 
 .seg-a, .seg-d, .seg-g {
-  height: 2.5px;
+  height: var(--seg-t);
   left: 2px;
   right: 2px;
   clip-path: polygon(14% 0%, 86% 0%, 100% 50%, 86% 100%, 14% 100%, 0% 50%);
@@ -206,7 +222,7 @@ body {
 .seg-d { bottom: 0; }
 
 .seg-b, .seg-c, .seg-e, .seg-f {
-  width: 2.5px;
+  width: var(--seg-t);
   clip-path: polygon(0% 14%, 50% 0%, 100% 14%, 100% 86%, 50% 100%, 0% 86%);
 }
 .seg-b, .seg-c { right: 0; }
@@ -216,9 +232,9 @@ body {
 
 .seg-dp {
   position: absolute;
-  width: 2.5px;
-  height: 2.5px;
-  right: -4px;
+  width: var(--seg-t);
+  height: var(--seg-t);
+  right: calc(var(--seg-t) * -1.8);
   bottom: 0;
   border-radius: 50%;
 }
