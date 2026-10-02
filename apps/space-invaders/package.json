@@ -1,0 +1,11 @@
+{
+  "name": "galaxy-siege",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "1978年の古典的な固定画面シューティングへのオマージュ(PWA)",
+  "scripts": {
+    "dev": "npx --yes serve .",
+    "test": "node test/game.test.mjs"
+  }
+}
