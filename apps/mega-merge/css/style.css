@@ -76,6 +76,11 @@ body {
   letter-spacing: 0.04em;
 }
 
+.hud-val.danger {
+  color: #ff5a5a;
+  text-shadow: 0 0 6px rgba(255, 90, 90, 0.6);
+}
+
 .screen-wrap {
   position: relative;
   background: var(--screen-bg);

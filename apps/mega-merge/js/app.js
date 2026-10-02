@@ -42,18 +42,21 @@ function playEvents(events, g) {
   for (const ev of events) {
     if (ev === 'shoot') beep(500, 50, 'square', 0.04);
     else if (ev === 'hit') beep(320, 60, 'square', 0.04);
+    else if (ev === 'miss') beep(180, 40, 'square', 0.025);
     else if (ev === 'merge') {
       const chain = g.lastResolve ? g.lastResolve.chainIndex : 1;
       beep(440 + chain * 120, 90, 'sawtooth', 0.06);
     } else if (ev === 'pop') beep(1000, 220, 'triangle', 0.08);
     else if (ev === 'cleared') beep(700, 500, 'triangle', 0.07);
+    else if (ev === 'gameOver') beep(90, 600, 'sawtooth', 0.08);
   }
 }
 
 function updateHud() {
   scoreVal.textContent = String(game.score);
   hiVal.textContent = String(game.highScore);
-  shotsVal.textContent = String(game.shotsUsed);
+  shotsVal.textContent = String(game.shotsRemaining);
+  shotsVal.classList.toggle('danger', game.shotsRemaining <= 20);
 }
 
 const OVERLAY_TEXT = {
@@ -61,6 +64,7 @@ const OVERLAY_TEXT = {
   ready: ['GET READY', ''],
   paused: ['PAUSE', 'FIREで再開'],
   cleared: ['ALL CLEAR!', 'タップしてもう一度'],
+  gameOver: ['OUT OF AMMO', 'タップしてもう一度'],
 };
 
 function updateOverlay() {
@@ -71,9 +75,11 @@ function updateOverlay() {
   overlay.classList.remove('hidden');
   const [title, sub] = OVERLAY_TEXT[game.phase] || OVERLAY_TEXT.idle;
   overlayTitle.textContent = game.phase === 'ready' ? `HI-SCORE ${game.highScore}` : title;
-  overlaySub.textContent = game.phase === 'cleared'
-    ? `SCORE ${game.score}  (${game.shotsUsed}発)\nタップしてもう一度`
-    : sub;
+  if (game.phase === 'cleared' || game.phase === 'gameOver') {
+    overlaySub.textContent = `SCORE ${game.score}  (${game.shotsUsed}発使用)\nタップしてもう一度`;
+  } else {
+    overlaySub.textContent = sub;
+  }
 }
 
 function onChange(g) {
@@ -83,7 +89,7 @@ function onChange(g) {
 }
 
 function tryAdvance() {
-  if (!game.active || game.phase === 'cleared') { game.start(); return true; }
+  if (!game.active || game.phase === 'cleared' || game.phase === 'gameOver') { game.start(); return true; }
   if (game.phase === 'paused') { game.resume(); return true; }
   return false;
 }

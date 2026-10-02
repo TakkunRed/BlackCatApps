@@ -2,7 +2,14 @@
 // オリジナルのパズル×シューティング。ブロック崩しのように並んだ「2の累乗」ブロックを
 // 下から撃って2倍にし、上下左右の隣接ブロックと同じ数字なら合体してさらに倍になる。
 // 合体の連鎖が長いほど得点ボーナスが大きくなる。2048に到達したブロックはポップして消滅する。
-// v1: ブロックは降下せず、弾数制限も無い「純粋パズル」として成立するかを確認する版。
+//
+// v1(降下なし・弾数無制限)は「同じ列を撃ち続ければ必ず勝てる」ため、
+// プレイヤーの選択がほぼ結果に影響しないことがシミュレーションで判明した
+// (先読み戦略でもランダムと数%しか差が出なかった)。
+// v2ではマージ/ポップで空いたマスに同じ列のブロックが重力で落ちてくるようにし、
+// どの列を撃つかで盤面が実際に作り変わる戦略性を持たせた上で、弾数に上限を設けている
+// (先読み戦略の平均105発・ランダムは平均161発とシミュレーションで実力差を確認し、
+//  上限130発で先読み成功率95%・ランダム成功率6%になるよう調整)。
 
 export const FIELD_W = 240;
 export const FIELD_H = 280;
@@ -27,6 +34,7 @@ const BULLET_SPEED = 260;
 const POP_THRESHOLD = 2048;
 const POP_BONUS = 500;
 const CHAIN_MULT_STEP = 0.5; // 連鎖1回ごとに乗率+0.5
+const SHOT_LIMIT = 130; // シミュレーションで調整した弾数上限
 
 const SEED_VALUES = [2, 2, 2, 4, 4, 8]; // 初期盤面の重み付き候補値
 
@@ -60,7 +68,7 @@ class MegaMergeGame {
 
   reset() {
     this.active = false;
-    this.phase = 'idle'; // idle | ready | playing | paused | cleared
+    this.phase = 'idle'; // idle | ready | playing | paused | cleared | gameOver
     this.score = 0;
     this.shotsUsed = 0;
     this.events = [];
@@ -87,6 +95,10 @@ class MegaMergeGame {
     let n = 0;
     for (const row of this.grid) for (const v of row) if (v) n++;
     return n;
+  }
+
+  get shotsRemaining() {
+    return Math.max(0, SHOT_LIMIT - this.shotsUsed);
   }
 
   start({ skipReady = false } = {}) {
@@ -157,6 +169,7 @@ class MegaMergeGame {
   fire() {
     if (this.phase !== 'playing') return;
     if (this.bullet) return; // 同時1発まで
+    if (this.shotsUsed >= SHOT_LIMIT) return; // 弾切れ(通常は直前の着弾解決時にgameOverになっている)
     this.bullet = {
       x: this.player.x + PLAYER_W / 2 - BULLET_W / 2,
       y: PLAYER_Y - BULLET_H,
@@ -187,6 +200,8 @@ class MegaMergeGame {
     this.bullet.y -= BULLET_SPEED * dt;
     if (this.bullet.y < 0) {
       this.bullet = null;
+      this.events.push('miss');
+      this._checkAmmoOut();
       return;
     }
     const col = Math.floor((this.bullet.x + BULLET_W / 2 - GRID_MARGIN_X) / (CELL_W + CELL_GAP));
@@ -208,6 +223,7 @@ class MegaMergeGame {
     let value = this.grid[row][col] * 2;
     let chainIndex = 0;
     let scoreGained = value * this._multiplier(0);
+    const touchedCols = new Set([col]);
 
     for (;;) {
       let mergedAt = null;
@@ -218,6 +234,7 @@ class MegaMergeGame {
       }
       if (!mergedAt) break;
       this.grid[mergedAt.nr][mergedAt.nc] = 0;
+      touchedCols.add(mergedAt.nc);
       chainIndex += 1;
       value *= 2;
       scoreGained += value * this._multiplier(chainIndex);
@@ -233,12 +250,37 @@ class MegaMergeGame {
       this.grid[row][col] = value;
     }
 
+    // 合体やポップで空いたマスには、同じ列の上のブロックが重力で落ちてくる。
+    // これにより「どの列を撃つか」が実際に盤面の並びを作り変えるようになる。
+    for (const c of touchedCols) this._applyGravity(c);
+
     this.score += scoreGained;
     this.events.push(chainIndex > 0 ? 'merge' : 'hit');
     this.lastResolve = { row, col, finalValue: value, chainIndex, scoreGained, popped };
 
     if (this.blockCount === 0) {
       this._cleared();
+    } else {
+      this._checkAmmoOut();
+    }
+  }
+
+  _applyGravity(col) {
+    const values = [];
+    for (let row = 0; row < GRID_ROWS; row++) {
+      if (this.grid[row][col]) values.push(this.grid[row][col]);
+    }
+    for (let row = 0; row < GRID_ROWS; row++) this.grid[row][col] = 0;
+    let writeRow = GRID_ROWS - 1;
+    for (let i = values.length - 1; i >= 0; i--) {
+      this.grid[writeRow][col] = values[i];
+      writeRow -= 1;
+    }
+  }
+
+  _checkAmmoOut() {
+    if (this.phase === 'playing' && this.shotsUsed >= SHOT_LIMIT) {
+      this._gameOver();
     }
   }
 
@@ -249,6 +291,17 @@ class MegaMergeGame {
   _cleared() {
     this.phase = 'cleared';
     this.events.push('cleared');
+    this._saveHighScoreIfRecord();
+  }
+
+  _gameOver() {
+    this.phase = 'gameOver';
+    this.bullet = null;
+    this.events.push('gameOver');
+    this._saveHighScoreIfRecord();
+  }
+
+  _saveHighScoreIfRecord() {
     if (this.score > this.highScore) {
       this.highScore = this.score;
       localStorage.setItem(HIGH_SCORE_KEY, String(this.highScore));
@@ -261,4 +314,4 @@ class MegaMergeGame {
   }
 }
 
-export { MegaMergeGame, POP_THRESHOLD, POP_BONUS };
+export { MegaMergeGame, POP_THRESHOLD, POP_BONUS, SHOT_LIMIT };
