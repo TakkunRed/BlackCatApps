@@ -18,6 +18,7 @@ const START_LIVES = 3;
 const BASE_TICK_MS = 1100;
 const MIN_TICK_MS = 420;
 const TICK_STEP_MS = 70;
+const READY_SCREEN_MS = 1300; // スタート直後に最高得点を見せる時間
 const HIGH_SCORE_KEY = 'calculatorInvader.highScore';
 
 const AIM_SEQUENCE = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'n'];
@@ -33,7 +34,7 @@ class InvaderGame {
 
   reset() {
     this.active = false;
-    this.phase = 'idle'; // idle | playing | roundClear | gameOver
+    this.phase = 'idle'; // idle | ready | playing | paused | roundClear | gameOver
     this.stage = 1;
     this.round = 1;
     this.lives = START_LIVES;
@@ -47,6 +48,7 @@ class InvaderGame {
     this.field = new Array(MAX_LANES).fill(null); // 自陣に並んで接近してくるインベーダー
     this.justSpawned = null;
     this._clearTimer();
+    this._clearReadyTimer();
   }
 
   get laneCount() {
@@ -57,19 +59,58 @@ class InvaderGame {
     return AIM_SEQUENCE[this.aimIndex];
   }
 
-  start() {
+  start({ skipReady = false } = {}) {
     this.reset();
     this.active = true;
-    this.phase = 'playing';
-    this._startRound();
+    if (skipReady) {
+      // テスト・デバッグ用: 最高得点表示を待たずに即プレイ開始する
+      this.phase = 'playing';
+      this._startRound();
+      this._emit();
+      return;
+    }
+    this.phase = 'ready'; // 最高得点を一瞬見せてから開始する
     this._emit();
+    this.readyTimer = setTimeout(() => {
+      this.readyTimer = null;
+      this.phase = 'playing';
+      this._startRound();
+      this._emit();
+    }, READY_SCREEN_MS);
   }
 
   quit() {
     this._clearTimer();
+    this._clearReadyTimer();
     this.active = false;
     this.phase = 'idle';
     this._emit();
+  }
+
+  pause() {
+    if (this.phase !== 'playing') return;
+    this._clearTimer();
+    this.phase = 'paused';
+    this._emit();
+  }
+
+  resume() {
+    if (this.phase !== 'paused') return;
+    this.phase = 'playing';
+    this.timer = setInterval(() => this._tick(), this._tickInterval());
+    this._emit();
+  }
+
+  togglePause() {
+    if (this.phase === 'playing') this.pause();
+    else if (this.phase === 'paused') this.resume();
+  }
+
+  _clearReadyTimer() {
+    if (this.readyTimer) {
+      clearTimeout(this.readyTimer);
+      this.readyTimer = null;
+    }
   }
 
   _startRound() {

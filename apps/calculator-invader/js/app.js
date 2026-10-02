@@ -73,11 +73,21 @@ function renderGame(g) {
     g.justSpawned = null;
   }
 
-  if (g.phase === 'playing') {
+  if (g.phase === 'ready') {
+    mainRow.classList.remove('game-mode');
+    renderToSegments(mainDigits, String(g.highScore));
+    subLeft.textContent = '';
+    subRight.textContent = 'HI SCORE';
+  } else if (g.phase === 'playing') {
     mainRow.classList.add('game-mode');
     renderLineup(g);
     subLeft.textContent = `${g.stage}-${g.round}`;
     subRight.textContent = `SHOT ${g.shotsThisRound}/30`;
+  } else if (g.phase === 'paused') {
+    mainRow.classList.add('game-mode');
+    renderLineup(g);
+    subLeft.textContent = 'PAUSE';
+    subRight.textContent = '= で再開';
   } else if (g.phase === 'roundClear') {
     mainRow.classList.remove('game-mode');
     renderToSegments(mainDigits, String(g.roundScore));
@@ -154,6 +164,10 @@ function handleGameKey(key) {
     game.toggleSound();
     return;
   }
+  if (key === 'PAUSE' || (key === '=' && (game.phase === 'playing' || game.phase === 'paused'))) {
+    game.togglePause();
+    return;
+  }
 
   if (game.phase === 'roundClear') {
     if (key === '+' || key === '.' || key === '=') {
@@ -189,7 +203,7 @@ const KEY_MAP = {
   '.': '.', 'a': '.', 'A': '.', // AIM: •キー(ピリオド)、またはAキー
   ' ': '+', // FIRE: +キー、またはスペースキー(連打しやすいように)
   '%': '%', 'Backspace': 'AC', 'Escape': 'AC', 'c': 'C', 'C': 'C',
-  'g': 'GAME', 'G': 'GAME', 's': 'SQRT', 'S': 'SQRT',
+  'g': 'GAME', 'G': 'GAME', 's': 'SQRT', 'S': 'SQRT', 'p': 'PAUSE', 'P': 'PAUSE',
 };
 window.addEventListener('keydown', (e) => {
   const mapped = KEY_MAP[e.key];
