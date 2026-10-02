@@ -40,7 +40,7 @@ body {
 
 .stage {
   width: 100%;
-  max-width: 400px;
+  max-width: 320px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -59,7 +59,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  padding: 2px 4px 10px;
+  padding: 4px 4px 14px;
 }
 
 .brand-left, .brand-right {
@@ -101,9 +101,9 @@ body {
 .lcd-panel {
   background: linear-gradient(175deg, var(--lcd-bg), var(--lcd-bg-deep));
   border-radius: 6px;
-  padding: 10px 12px 8px;
+  padding: 14px 12px 12px;
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.4);
-  margin-bottom: 14px;
+  margin-bottom: 18px;
   border: 1px solid #8a9480;
 }
 
@@ -240,7 +240,7 @@ body {
 .keypad {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 6px;
+  gap: 8px;
 }
 
 .key {
@@ -250,7 +250,7 @@ body {
   background: var(--key-bg);
   color: var(--key-text);
   font-size: 15px;
-  padding: 11px 0;
+  padding: 14px 0;
   box-shadow: 0 2px 0 rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   transition: transform 0.05s ease, box-shadow 0.05s ease;
   touch-action: manipulation;
@@ -319,7 +319,7 @@ body {
   padding: 0 8px;
 }
 
-@media (max-width: 360px) {
-  .key { font-size: 13px; padding: 9px 0; }
+@media (max-width: 300px) {
+  .key { font-size: 13px; padding: 11px 0; }
   .key-game { font-size: 10px; }
 }
