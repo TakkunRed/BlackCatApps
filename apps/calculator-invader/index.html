@@ -27,10 +27,6 @@
 
     <div class="lcd-panel">
       <div class="lcd-status-row" id="statusRow">
-        <div class="aim-block">
-          <div class="status-label">AIM</div>
-          <div class="seg-display aim-big" id="aimDisplay"></div>
-        </div>
         <div class="status-block">
           <div class="status-label">LIFE</div>
           <div class="seg-display small" id="lifeDisplay"></div>
@@ -38,8 +34,14 @@
       </div>
 
       <div class="lcd-main-row" id="mainRow">
-        <div class="seg-display main" id="mainDisplay"></div>
-        <div class="seg-display main lineup" id="lineupDisplay"></div>
+        <div class="aim-block" id="aimBlock">
+          <div class="status-label">AIM</div>
+          <div class="seg-display main" id="aimDisplay"></div>
+        </div>
+        <div class="main-slot">
+          <div class="seg-display main" id="mainDisplay"></div>
+          <div class="seg-display main lineup" id="lineupDisplay"></div>
+        </div>
       </div>
 
       <div class="lcd-sub-row" id="subRow">

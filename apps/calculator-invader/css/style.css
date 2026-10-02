@@ -110,9 +110,9 @@ body {
 .lcd-status-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 6px;
-  min-height: 64px;
+  min-height: 22px;
   opacity: 0;
   transform: translateY(-2px);
   transition: opacity 0.2s ease, transform 0.2s ease;
@@ -132,9 +132,9 @@ body {
 }
 
 .aim-block {
-  display: flex;
+  display: none;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .status-label {
@@ -145,19 +145,23 @@ body {
 }
 
 .aim-block .status-label {
-  writing-mode: vertical-rl;
-  letter-spacing: 0.15em;
-  opacity: 0.45;
+  opacity: 0.5;
 }
 
 .lcd-main-row {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
   padding: 4px 2px;
 }
 
+.main-slot {
+  display: flex;
+  margin-left: auto;
+}
+
 .seg-display.lineup { display: none; }
-.lcd-main-row.game-mode .seg-display.main:not(.lineup) { display: none; }
+.lcd-main-row.game-mode #aimBlock { display: flex; }
+.lcd-main-row.game-mode #mainDisplay { display: none; }
 .lcd-main-row.game-mode .seg-display.lineup { display: flex; }
 
 .lcd-sub-row {
@@ -194,13 +198,6 @@ body {
   --seg-t: 2.6px;
   width: 13px;
   height: 22px;
-}
-
-.seg-display.aim-big .seg-digit {
-  --seg-t: 5px;
-  width: 36px;
-  height: 60px;
-  margin: 0 2px;
 }
 
 .seg {
