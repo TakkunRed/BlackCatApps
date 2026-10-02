@@ -1,0 +1,17 @@
+{
+  "name": "MEGA MERGE - 数字合体シューティング",
+  "short_name": "MEGA MERGE",
+  "description": "数字ブロックを下から撃って2倍に。隣と同じ数字なら合体してさらに倍。連鎖を繋げて2048を目指せ。",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0b0d",
+  "theme_color": "#05080a",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

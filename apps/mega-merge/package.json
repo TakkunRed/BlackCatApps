@@ -1,0 +1,11 @@
+{
+  "name": "mega-merge",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "数字ブロックを撃って合体させるオリジナルのパズル×シューティング(PWA)",
+  "scripts": {
+    "dev": "npx --yes serve .",
+    "test": "node test/game.test.mjs"
+  }
+}

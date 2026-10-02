@@ -1,0 +1,198 @@
+:root {
+  --body-bg: #0a0b0d;
+  --cabinet-bg: linear-gradient(165deg, #1c1e22, #0d0e10);
+  --screen-bg: #05080a;
+  --violet: #a78bfa;
+  --violet-dim: rgba(167, 139, 250, 0.35);
+  --white: #eafaf0;
+  --key-bg: #22252a;
+  --key-bg-active: #2d3138;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--body-bg);
+  touch-action: manipulation;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  color: var(--white);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.stage {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.cabinet {
+  width: 100%;
+  background: var(--cabinet-bg);
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.hud {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 4px 10px;
+  gap: 8px;
+}
+
+.hud-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hud-block:last-child { align-items: flex-end; }
+
+.hud-label {
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  color: var(--violet-dim);
+}
+
+.hud-val {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--violet);
+  text-shadow: 0 0 6px rgba(167, 139, 250, 0.5);
+  letter-spacing: 0.04em;
+}
+
+.screen-wrap {
+  position: relative;
+  background: var(--screen-bg);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.25), inset 0 2px 10px rgba(0, 0, 0, 0.6);
+  aspect-ratio: 240 / 280;
+  touch-action: none; /* キャンバス上のドラッグで自機を操作するため */
+  cursor: grab;
+}
+
+#gameCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(5, 8, 10, 0.72);
+  text-align: center;
+  padding: 0 16px;
+  transition: opacity 0.15s ease;
+  cursor: pointer;
+}
+
+.overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.overlay-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--violet);
+  text-shadow: 0 0 8px rgba(167, 139, 250, 0.6);
+}
+
+.overlay-sub {
+  font-size: 10.5px;
+  color: var(--white);
+  opacity: 0.85;
+  line-height: 1.6;
+  white-space: pre-line;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ctrl-btn {
+  border: none;
+  border-radius: 10px;
+  background: var(--key-bg);
+  color: var(--white);
+  font-size: 18px;
+  padding: 16px 0;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.05s ease, box-shadow 0.05s ease;
+}
+
+.ctrl-btn:active,
+.ctrl-btn.pressed {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 rgba(0, 0, 0, 0.4);
+  background: var(--key-bg-active);
+}
+
+.ctrl-fire {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--violet);
+  box-shadow: 0 0 0 2px var(--violet-dim) inset, 0 2px 0 rgba(0, 0, 0, 0.4);
+}
+
+.secondary-controls {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.pill-btn {
+  border: none;
+  border-radius: 999px;
+  background: var(--key-bg);
+  color: var(--white);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  padding: 7px 14px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.pill-btn:active { background: var(--key-bg-active); }
+
+.credit {
+  max-width: 320px;
+  text-align: center;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: #7c828a;
+  padding: 0 8px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+}
