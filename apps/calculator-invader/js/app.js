@@ -185,13 +185,17 @@ document.querySelectorAll('.key').forEach((btn) => {
 
 const KEY_MAP = {
   '0': '0', '1': '1', '2': '2', '3': '3', '4': '4', '5': '5', '6': '6', '7': '7', '8': '8', '9': '9',
-  '+': '+', '-': '-', '*': '×', 'x': '×', '/': '÷', '=': '=', 'Enter': '=',
-  '.': '.', '%': '%', 'Backspace': 'AC', 'Escape': 'AC', 'g': 'GAME', 'G': 'GAME',
+  '+': '+', '-': '-', '*': '×', 'x': '×', 'X': '×', '/': '÷', '=': '=', 'Enter': '=',
+  '.': '.', 'a': '.', 'A': '.', // AIM: •キー(ピリオド)、またはAキー
+  ' ': '+', // FIRE: +キー、またはスペースキー(連打しやすいように)
+  '%': '%', 'Backspace': 'AC', 'Escape': 'AC', 'c': 'C', 'C': 'C',
+  'g': 'GAME', 'G': 'GAME', 's': 'SQRT', 'S': 'SQRT',
 };
 window.addEventListener('keydown', (e) => {
   const mapped = KEY_MAP[e.key];
   if (mapped) {
     e.preventDefault();
+    if (e.repeat) return; // キー押しっぱなしでの自動連射を防止(実機の1回押し=1回操作に合わせる)
     routeKey(mapped);
   }
 });
