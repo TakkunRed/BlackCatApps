@@ -1,0 +1,11 @@
+{
+  "name": "brick-blitz",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "1976年の古典的なブロック崩しへのオマージュ(PWA)",
+  "scripts": {
+    "dev": "npx --yes serve .",
+    "test": "node test/game.test.mjs"
+  }
+}
