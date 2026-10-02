@@ -1,0 +1,11 @@
+{
+  "name": "snake-byte",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "古典的なスネークゲームへのオマージュ(PWA)",
+  "scripts": {
+    "dev": "npx --yes serve .",
+    "test": "node test/game.test.mjs"
+  }
+}

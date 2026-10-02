@@ -7,6 +7,7 @@
 
 | アプリ | 概要 |
 |---|---|
+| [SNAKE BYTE](apps/snake/) | 古典的なスネークゲームへのオマージュ(詳細は各READMEを参照) |
 | [BRICK BLITZ](apps/breakout/) | 1976年の古典的なブロック崩しへのオマージュ(詳細は各READMEを参照) |
 | [GALAXY SIEGE](apps/space-invaders/) | 1978年の古典的な固定画面シューティングへのオマージュ(詳細は各READMEを参照) |
 | [電卓インベーダー](apps/calculator-invader/) | CASIO「ゲーム電卓 SL-880」へのオマージュ。電卓UIに載せた数字撃墜シューティング(詳細は各READMEを参照) |
