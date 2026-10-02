@@ -5,7 +5,7 @@ import { InvaderGame, MAX_LANES } from './game.js';
 const calc = new Calculator();
 const game = new InvaderGame(renderGame);
 
-const mainDigits = buildSegmentDisplay(document.getElementById('mainDisplay'), 10, true);
+const mainDigits = buildSegmentDisplay(document.getElementById('mainDisplay'), 8, true);
 const lineupDigits = buildSegmentDisplay(document.getElementById('lineupDisplay'), MAX_LANES);
 const aimDigits = buildSegmentDisplay(document.getElementById('aimDisplay'), 1);
 const lifeDigits = buildSegmentDisplay(document.getElementById('lifeDisplay'), 1);

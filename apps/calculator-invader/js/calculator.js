@@ -1,7 +1,7 @@
 // 四則演算電卓のロジック(定数計算 K / パーセントキー対応の簡易実装)
 // SL-880の説明書記載の挙動を参考にしつつ、簡略化したモデル。
 
-const MAX_DIGITS = 10;
+const MAX_DIGITS = 8; // 表示桁数(seg-display側)に合わせる
 const TAX_RATE = 0.10; // 税込/税抜キー用の簡易固定税率(10%)
 
 class Calculator {
@@ -102,9 +102,9 @@ class Calculator {
   }
 
   _finishToCurrent() {
-    if (!isFinite(this.accumulator) || Math.abs(this.accumulator) >= 1e10) {
+    if (!isFinite(this.accumulator) || Math.abs(this.accumulator) >= 1e8) {
       this.error = true;
-      this.current = isFinite(this.accumulator) ? String((this.accumulator / 1e10).toFixed(2)) : '0';
+      this.current = isFinite(this.accumulator) ? String((this.accumulator / 1e8).toFixed(2)) : '0';
       return;
     }
     this.current = this._format(this.accumulator);
