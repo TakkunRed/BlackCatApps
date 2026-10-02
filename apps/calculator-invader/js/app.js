@@ -104,11 +104,20 @@ function handleCalcKey(key) {
     return;
   }
   if (key === 'AC') { calc.allClear(); renderCalc(); return; }
+  if (key === 'C') { calc.clearEntry(); renderCalc(); return; }
   if (key >= '0' && key <= '9') { calc.inputDigit(key); renderCalc(); return; }
   if (key === '.') { calc.inputDot(); renderCalc(); return; }
   if (key === '%') { calc.percent(); renderCalc(); return; }
   if (key === '=') { calc.equals(); renderCalc(); return; }
   if (['+', '-', '×', '÷'].includes(key)) { calc.inputOperator(key); renderCalc(); return; }
+  if (key === 'SIGN') { calc.toggleSign(); renderCalc(); return; }
+  if (key === 'SQRT') { calc.sqrt(); renderCalc(); return; }
+  if (key === 'MC') { calc.memoryClear(); renderCalc(); return; }
+  if (key === 'MR') { calc.memoryRecall(); renderCalc(); return; }
+  if (key === 'MPLUS') { calc.memoryAdd(); renderCalc(); return; }
+  if (key === 'MMINUS') { calc.memorySubtract(); renderCalc(); return; }
+  if (key === 'TAX_INCL') { calc.taxInclusive(); renderCalc(); return; }
+  if (key === 'TAX_EXCL') { calc.taxExclusive(); renderCalc(); return; }
 }
 
 function handleGameKey(key) {

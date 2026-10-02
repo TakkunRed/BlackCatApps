@@ -15,8 +15,14 @@
 <main class="stage">
   <div class="calculator" id="calculator">
     <div class="brand-row">
-      <span class="brand">BLACK CAT CALC</span>
-      <span class="model">CI-880</span>
+      <div class="brand-left">
+        <span class="brand">BLACK CAT</span>
+        <span class="brand-sub">GAME CALCULATOR</span>
+      </div>
+      <div class="brand-right">
+        <span class="solar-panel" aria-hidden="true"></span>
+        <span class="model">CI-880</span>
+      </div>
     </div>
 
     <div class="lcd-panel">
@@ -44,28 +50,39 @@
     </div>
 
     <div class="keypad">
-      <button class="key key-fn" data-key="GAME">GAME</button>
-      <button class="key key-fn" data-key="AC">AC</button>
-      <button class="key key-op" data-key="%">% <small>SOUND</small></button>
+      <button class="key key-game" data-key="GAME">GAME</button>
+      <button class="key" data-key="SQRT">√</button>
+      <button class="key" data-key="%">% <small class="sound-label">SOUND</small></button>
+      <button class="key key-tax" data-key="TAX_EXCL">税抜</button>
+      <button class="key key-tax" data-key="TAX_INCL">税込</button>
+
+      <button class="key" data-key="MC">MC</button>
+      <button class="key" data-key="MR">MR</button>
+      <button class="key" data-key="MMINUS">M−</button>
+      <button class="key" data-key="MPLUS">M+</button>
       <button class="key key-op" data-key="÷">÷</button>
 
+      <button class="key" data-key="SIGN">+/−</button>
       <button class="key" data-key="7">7</button>
       <button class="key" data-key="8">8</button>
       <button class="key" data-key="9">9</button>
       <button class="key key-op" data-key="×">×</button>
 
+      <button class="key key-inert" data-key="PLAY" disabled>▶</button>
       <button class="key" data-key="4">4</button>
       <button class="key" data-key="5">5</button>
       <button class="key" data-key="6">6</button>
       <button class="key key-op" data-key="-">−</button>
 
+      <button class="key" data-key="C">C</button>
       <button class="key" data-key="1">1</button>
       <button class="key" data-key="2">2</button>
       <button class="key" data-key="3">3</button>
-      <button class="key key-op" data-key="+">+ <small>FIRE</small></button>
+      <button class="key key-fire" data-key="+">+ <small>FIRE</small></button>
 
-      <button class="key key-wide" data-key="0">0</button>
-      <button class="key" data-key=".">• <small>AIM</small></button>
+      <button class="key" data-key="AC">AC</button>
+      <button class="key" data-key="0">0</button>
+      <button class="key key-aim" data-key=".">• <small>AIM</small></button>
       <button class="key key-eq" data-key="=">=</button>
     </div>
   </div>

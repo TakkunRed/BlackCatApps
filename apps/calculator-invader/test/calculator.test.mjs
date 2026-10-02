@@ -43,3 +43,44 @@ run('divide by zero -> error', c => {
   c.inputDigit('5'); c.inputOperator('÷'); c.inputDigit('0'); c.equals();
   return c.error;
 }, true);
+
+run('√4×5=10 (manual example: √ applies immediately, then ×5)', c => {
+  c.inputDigit('4'); c.sqrt(); c.inputOperator('×'); c.inputDigit('5'); c.equals();
+  return c.displayValue;
+}, '10');
+
+run('clearEntry keeps the running total', c => {
+  c.inputDigit('2'); c.inputOperator('+'); c.inputDigit('9'); c.clearEntry();
+  c.inputDigit('3'); c.equals();
+  return c.displayValue;
+}, '5');
+
+run('memory M+/M-/MR (manual example: 80x9 -50x6 +20x3 = 480)', c => {
+  c.inputDigit('8'); c.inputDigit('0'); c.inputOperator('×'); c.inputDigit('9'); c.equals(); c.memoryAdd();
+  c.inputDigit('5'); c.inputDigit('0'); c.inputOperator('×'); c.inputDigit('6'); c.equals(); c.memorySubtract();
+  c.inputDigit('2'); c.inputDigit('0'); c.inputOperator('×'); c.inputDigit('3'); c.equals(); c.memoryAdd();
+  c.memoryRecall();
+  return c.displayValue;
+}, '480');
+
+run('memory survives allClear but not memoryClear', c => {
+  c.inputDigit('7'); c.memoryAdd();
+  c.allClear();
+  c.memoryRecall();
+  const afterAC = c.displayValue;
+  c.memoryClear();
+  c.memoryRecall();
+  return `${afterAC},${c.displayValue}`;
+}, '7,0');
+
+run('tax-inclusive 10000 -> 11000 (manual example rate differs but formula matches)', c => {
+  c.inputDigit('1'); c.inputDigit('0'); c.inputDigit('0'); c.inputDigit('0'); c.inputDigit('0');
+  c.taxInclusive();
+  return c.displayValue;
+}, '11000');
+
+run('tax-exclusive 11000 -> 10000', c => {
+  c.inputDigit('1'); c.inputDigit('1'); c.inputDigit('0'); c.inputDigit('0'); c.inputDigit('0');
+  c.taxExclusive();
+  return c.displayValue;
+}, '10000');

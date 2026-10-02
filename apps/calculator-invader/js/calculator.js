@@ -2,9 +2,11 @@
 // SL-880の説明書記載の挙動を参考にしつつ、簡略化したモデル。
 
 const MAX_DIGITS = 10;
+const TAX_RATE = 0.10; // 税込/税抜キー用の簡易固定税率(10%)
 
 class Calculator {
   constructor() {
+    this.memory = 0; // 独立メモリー(ACでは消えない)
     this.reset();
   }
 
@@ -18,6 +20,16 @@ class Calculator {
     this.error = false;
     this.percentStage = 0; // +/- の % キーで amount→total の2段階表示用
     this.percentAmount = 0;
+    // 独立メモリーは AC では消えない(実機準拠)ため reset() の対象外
+  }
+
+  clearEntry() {
+    if (this.error) {
+      this.reset();
+      return;
+    }
+    this.current = '0';
+    this.freshEntry = false;
   }
 
   get displayValue() {
@@ -157,6 +169,58 @@ class Calculator {
 
   allClear() {
     this.reset();
+  }
+
+  sqrt() {
+    if (this.error) return;
+    const cur = parseFloat(this.current);
+    if (cur < 0) {
+      this.error = true;
+      this.current = '0';
+      return;
+    }
+    this.accumulator = Math.sqrt(cur);
+    this.pendingOp = null;
+    this._finishToCurrent();
+    this.freshEntry = true;
+  }
+
+  memoryAdd() {
+    if (this.error) return;
+    this.memory += parseFloat(this.current);
+    this.freshEntry = true;
+  }
+
+  memorySubtract() {
+    if (this.error) return;
+    this.memory -= parseFloat(this.current);
+    this.freshEntry = true;
+  }
+
+  memoryRecall() {
+    if (this.error) return;
+    this.current = this._format(this.memory);
+    this.freshEntry = true;
+  }
+
+  memoryClear() {
+    this.memory = 0;
+  }
+
+  taxInclusive() {
+    if (this.error) return;
+    this.accumulator = parseFloat(this.current) * (1 + TAX_RATE);
+    this.pendingOp = null;
+    this._finishToCurrent();
+    this.freshEntry = true;
+  }
+
+  taxExclusive() {
+    if (this.error) return;
+    this.accumulator = parseFloat(this.current) / (1 + TAX_RATE);
+    this.pendingOp = null;
+    this._finishToCurrent();
+    this.freshEntry = true;
   }
 }
 
