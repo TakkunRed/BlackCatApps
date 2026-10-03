@@ -1,35 +1,33 @@
 // MEGA MERGE - ロジック本体(描画・DOM非依存、update(dt)で駆動する純粋なゲームステート)
-// オリジナルのパズル×シューティング。ブロック崩しのように並んだ「2の累乗」ブロックを
-// 下から撃って2倍にし、上下左右の隣接ブロックと同じ数字なら合体してさらに倍になる。
+// オリジナルのパズル。ブロック崩しのように並んだ「2の累乗」ブロックを列ごとにタップして倍にし、
+// 上下左右の隣接ブロックと同じ数字なら合体してさらに倍になる。
 // 合体の連鎖が長いほど得点ボーナスが大きくなる。2048に到達したブロックはポップして消滅する。
 //
-// v1(降下なし・弾数無制限)は「同じ列を撃ち続ければ必ず勝てる」ため、
-// プレイヤーの選択がほぼ結果に影響しないことがシミュレーションで判明した
-// (先読み戦略でもランダムと数%しか差が出なかった)。
+// v1(降下なし・弾数無制限)は「同じマスを撃ち続ければ必ず勝てる」ため、
+// プレイヤーの選択がほぼ結果に影響しないことがシミュレーションで判明した。
 // v2ではマージ/ポップで空いたマスに同じ列のブロックが重力で落ちてくるようにし、
-// どの列を撃つかで盤面が実際に作り変わる戦略性を持たせた上で、弾数に上限を設けている
-// (先読み戦略の平均105発・ランダムは平均161発とシミュレーションで実力差を確認し、
-//  上限130発で先読み成功率95%・ランダム成功率6%になるよう調整)。
+// 弾数にも上限(130発)を設けた。
+// v2.1では、合体の過程をアニメーションで見せるようにし、列が完全に空になったら
+// 左右の列を詰める水平圧縮を追加した(終盤に隣接の機会が失われないようにするため)。
+// v3では、以下3点を見直した:
+//   1) 「下の1マスしか対象にならないなら、わざわざ弾を飛ばす意味がない」という指摘を受け、
+//      自機・弾を廃止し、列をタップ/クリックした瞬間に即解決するシンプルな操作に変更した。
+//   2) 「同じ数字を3つ並べても2つしか合体しない」という指摘を受け、直撃前の元の値でも
+//      隣接マッチできるようにし、今まで合体できなかった「同じ値同士の隣接」も合体できるようにした。
+//   3) 盤面から「クリアに必要な目安ショット数(TARGET)」をビームサーチで見積もり、
+//      それを下回ることを目標にできるようにした(厳密な最短手数の証明は計算量的に非現実的なため、
+//      あくまで強い見積もり値として扱う)。
 
 export const FIELD_W = 240;
 export const FIELD_H = 280;
 
 export const GRID_ROWS = 6;
 export const GRID_COLS = 6;
-const GRID_MARGIN_X = 8;
-const GRID_TOP_Y = 10;
+export const GRID_MARGIN_X = 8;
+export const GRID_TOP_Y = 18;
 export const CELL_GAP = 2;
 export const CELL_W = (FIELD_W - GRID_MARGIN_X * 2 - CELL_GAP * (GRID_COLS - 1)) / GRID_COLS;
-export const CELL_H = 30;
-
-export const PLAYER_W = 18;
-export const PLAYER_H = 8;
-const PLAYER_Y = FIELD_H - 16;
-const PLAYER_SPEED = 170;
-
-export const BULLET_W = 2;
-export const BULLET_H = 8;
-const BULLET_SPEED = 260;
+export const CELL_H = 38;
 
 const POP_THRESHOLD = 2048;
 const POP_BONUS = 500;
@@ -49,15 +47,18 @@ const NEIGHBOR_ORDER = [
   { dr: 0, dc: -1 },
 ];
 
-function cellX(col) {
+export function cellX(col) {
   return GRID_MARGIN_X + col * (CELL_W + CELL_GAP);
 }
-function cellY(row) {
+export function cellY(row) {
   return GRID_TOP_Y + row * (CELL_H + CELL_GAP);
 }
 
-// 純粋関数群: ゲーム本体(即時反映)とapp.js側のアニメーション(段階的に再現)の
-// 両方から同じロジックを使うため、グリッド操作をクラスの外に切り出している。
+// ============================================================
+// 純粋関数群: ゲーム本体(即時反映)・app.js側のアニメーション(段階的に再現)・
+// ソルバー(先読みシミュレーション)の3者から同じロジックを使うため、
+// グリッド操作をクラスの外に切り出している。クラスのthisや副作用には一切依存しない。
+// ============================================================
 
 // 指定した列の中身を下詰めにする。戻り値は実際に動いたブロックの移動一覧。
 function dropColumn(grid, col, rows) {
@@ -85,7 +86,6 @@ function dropColumn(grid, col, rows) {
 }
 
 // 完全に空の列を詰め、非空の列を元の左右順を保ったまま左詰めにする。
-// 戻り値は実際に動いた列の移動一覧(grid自体は呼び出し側で差し替える)。
 function packColumnsLeft(grid, rows, cols) {
   const nonEmptyCols = [];
   for (let c = 0; c < cols; c++) {
@@ -103,6 +103,141 @@ function packColumnsLeft(grid, rows, cols) {
   });
 
   return { grid: newGrid, shifts };
+}
+
+function frontmostRow(grid, col) {
+  for (let row = GRID_ROWS - 1; row >= 0; row--) if (grid[row][col]) return row;
+  return -1;
+}
+
+function occupiedColumns(grid) {
+  const cols = [];
+  for (let c = 0; c < GRID_COLS; c++) if (frontmostRow(grid, c) !== -1) cols.push(c);
+  return cols;
+}
+
+function countBlocks(grid) {
+  let n = 0;
+  for (const row of grid) for (const v of row) if (v) n++;
+  return n;
+}
+
+function multiplierForChain(chainIndex) {
+  return 1 + chainIndex * CHAIN_MULT_STEP;
+}
+
+/**
+ * 1マスへの着弾(直撃)を解決する純粋関数。渡されたgridを直接書き換え、
+ * 何が起きたかの詳細(steps)・連鎖回数・最終値・ポップしたか・得点を返す。
+ * 連鎖判定は「直撃前の元の値」と「直撃後に倍になった値」の両方を順に試す:
+ *   例: 隣が自分と同じ値(元の値)なら、まずそれと合体してから2倍になる。
+ *   その後は(今までと同じく)倍になった値と一致する隣接ブロックを探し続ける。
+ * これにより、今まで合体できなかった「同じ値同士の隣接」も合体できるようになる
+ * (ただし2048と同様、3つ並んでいても一度に合体するのは2つまで)。
+ */
+function resolveHitPure(grid, row, col) {
+  const origValue = grid[row][col];
+  let value = origValue;
+  let chainIndex = 0;
+  const touchedCols = new Set([col]);
+  const steps = [];
+
+  function findMatch(target) {
+    for (const { dr, dc } of NEIGHBOR_ORDER) {
+      const nr = row + dr, nc = col + dc;
+      if (nr < 0 || nr >= GRID_ROWS || nc < 0 || nc >= GRID_COLS) continue;
+      if (grid[nr][nc] === target) return { nr, nc };
+    }
+    return null;
+  }
+
+  // ステップ0(直撃): 元の値と同じ隣接ブロックがあれば先に吸収してから2倍、
+  // 無ければ(従来どおり)単純に2倍するだけ。
+  const firstMatch = findMatch(origValue);
+  if (firstMatch) {
+    grid[firstMatch.nr][firstMatch.nc] = 0;
+    touchedCols.add(firstMatch.nc);
+    chainIndex += 1;
+  }
+  value = origValue * 2;
+  steps.push(
+    firstMatch
+      ? { type: 'merge', from: { row: firstMatch.nr, col: firstMatch.nc }, at: { row, col }, value }
+      : { type: 'hit', row, col, value }
+  );
+
+  // 以降の連鎖: 直撃後の値(2倍・4倍…)と同じ隣接ブロックを探し続ける。
+  for (;;) {
+    const m = findMatch(value);
+    if (!m) break;
+    grid[m.nr][m.nc] = 0;
+    touchedCols.add(m.nc);
+    chainIndex += 1;
+    value *= 2;
+    steps.push({ type: 'merge', from: { row: m.nr, col: m.nc }, at: { row, col }, value });
+  }
+
+  let scoreGained = 0;
+  steps.forEach((step, i) => { scoreGained += step.value * multiplierForChain(i); });
+
+  let popped = false;
+  if (value >= POP_THRESHOLD) {
+    grid[row][col] = 0;
+    scoreGained += POP_BONUS;
+    popped = true;
+    steps.push({ type: 'pop', row, col, value });
+  } else {
+    grid[row][col] = value;
+  }
+
+  const gravityMoves = {};
+  for (const c of touchedCols) {
+    const moves = dropColumn(grid, c, GRID_ROWS);
+    if (moves.length) gravityMoves[c] = moves;
+  }
+
+  const { grid: packed, shifts: columnShift } = packColumnsLeft(grid, GRID_ROWS, GRID_COLS);
+  if (columnShift.length) {
+    for (let r = 0; r < GRID_ROWS; r++) for (let c = 0; c < GRID_COLS; c++) grid[r][c] = packed[r][c];
+  }
+
+  return { chainIndex, finalValue: value, popped, scoreGained, steps, gravityMoves, columnShift };
+}
+
+/**
+ * 盤面全体に対して「列colをタップしたら何が起きるか」を試す純粋関数(グリッドのクローンに対して実行)。
+ * 列が空なら null を返す。ソルバー・何手か先読みしたい用途向け。
+ */
+function simulateShot(grid, col) {
+  const row = frontmostRow(grid, col);
+  if (row === -1) return null;
+  const g = grid.map((r) => [...r]);
+  const result = resolveHitPure(g, row, col);
+  return { grid: g, ...result };
+}
+
+/**
+ * ビームサーチで「この盤面をクリアするのに必要そうなショット数」の目安を見積もる。
+ * 厳密な最短手数の証明ではなく、強い目安(TARGET)として扱うこと。
+ */
+function estimateParShots(initialGrid, { beamWidth = 40, maxDepth = 220 } = {}) {
+  let beam = [{ grid: initialGrid.map((r) => [...r]), shots: 0 }];
+  for (let depth = 0; depth < maxDepth; depth++) {
+    const next = [];
+    for (const state of beam) {
+      for (const col of occupiedColumns(state.grid)) {
+        const result = simulateShot(state.grid, col);
+        if (!result) continue;
+        const shots = state.shots + 1;
+        if (countBlocks(result.grid) === 0) return shots;
+        next.push({ grid: result.grid, shots, heuristic: countBlocks(result.grid) });
+      }
+    }
+    if (next.length === 0) return null;
+    next.sort((a, b) => a.heuristic - b.heuristic);
+    beam = next.slice(0, beamWidth);
+  }
+  return null; // maxDepth内にクリア手順が見つからなかった(非常に稀)
 }
 
 class MegaMergeGame {
@@ -123,10 +258,7 @@ class MegaMergeGame {
     this.events = [];
     this._clearReadyTimer();
     this._setupGrid();
-    this.player = { x: (FIELD_W - PLAYER_W) / 2 };
-    this._moveDir = 0;
-    this._dragTargetX = null;
-    this.bullet = null;
+    this.parTarget = estimateParShots(this.grid);
   }
 
   _setupGrid() {
@@ -141,9 +273,7 @@ class MegaMergeGame {
   }
 
   get blockCount() {
-    let n = 0;
-    for (const row of this.grid) for (const v of row) if (v) n++;
-    return n;
+    return countBlocks(this.grid);
   }
 
   get shotsRemaining() {
@@ -191,18 +321,6 @@ class MegaMergeGame {
     else if (this.phase === 'paused') this.resume();
   }
 
-  setMoveDir(dir) {
-    this._moveDir = dir; // -1 | 0 | 1
-  }
-
-  setDragTarget(x) {
-    this._dragTargetX = x;
-  }
-
-  clearDragTarget() {
-    this._dragTargetX = null;
-  }
-
   toggleSound() {
     this.soundOn = !this.soundOn;
     this._emit();
@@ -215,139 +333,43 @@ class MegaMergeGame {
     }
   }
 
-  fire() {
+  // 列をタップ/クリックしたときの唯一の操作。即座に解決する(移動・飛翔時間は無い)。
+  shoot(col) {
     if (this.phase !== 'playing') return;
-    if (this.bullet) return; // 同時1発まで
     if (this.shotsUsed >= SHOT_LIMIT) return; // 弾切れ(通常は直前の着弾解決時にgameOverになっている)
-    this.bullet = {
-      x: this.player.x + PLAYER_W / 2 - BULLET_W / 2,
-      y: PLAYER_Y - BULLET_H,
-    };
+    const row = frontmostRow(this.grid, col);
+    if (row === -1) return; // 空の列
     this.shotsUsed += 1;
     this.events.push('shoot');
-    this._emit();
-  }
-
-  update(dt) {
-    if (this.phase !== 'playing') return;
-    this._updatePlayer(dt);
-    this._moveBullet(dt);
-    this._emit();
-  }
-
-  _updatePlayer(dt) {
-    if (this._dragTargetX !== null) {
-      this.player.x = this._dragTargetX - PLAYER_W / 2;
-    } else {
-      this.player.x += this._moveDir * PLAYER_SPEED * dt;
-    }
-    this.player.x = Math.max(2, Math.min(FIELD_W - PLAYER_W - 2, this.player.x));
-  }
-
-  _moveBullet(dt) {
-    if (!this.bullet) return;
-    this.bullet.y -= BULLET_SPEED * dt;
-    if (this.bullet.y < 0) {
-      this.bullet = null;
-      this.events.push('miss');
-      this._checkAmmoOut();
-      return;
-    }
-    const col = Math.floor((this.bullet.x + BULLET_W / 2 - GRID_MARGIN_X) / (CELL_W + CELL_GAP));
-    if (col < 0 || col >= GRID_COLS) return;
-    // この列の中で一番下(自陣に近い)側から、弾のy位置に重なる最初のブロックを探す
-    for (let row = GRID_ROWS - 1; row >= 0; row--) {
-      if (!this.grid[row][col]) continue;
-      const by = cellY(row);
-      if (this.bullet.y <= by + CELL_H) {
-        this.bullet = null;
-        this._resolveHit(row, col);
-        return;
-      }
-      break; // この列で一番下のブロックより下に弾があるのに当たっていない = まだ到達前
-    }
+    this._resolveHit(row, col);
   }
 
   _resolveHit(row, col) {
-    let value = this.grid[row][col] * 2;
-    let chainIndex = 0;
-    let scoreGained = value * this._multiplier(0);
-    const touchedCols = new Set([col]);
-    const steps = [{ type: 'hit', row, col, value }];
+    const result = resolveHitPure(this.grid, row, col);
 
-    for (;;) {
-      let mergedAt = null;
-      for (const { dr, dc } of NEIGHBOR_ORDER) {
-        const nr = row + dr, nc = col + dc;
-        if (nr < 0 || nr >= GRID_ROWS || nc < 0 || nc >= GRID_COLS) continue;
-        if (this.grid[nr][nc] === value) { mergedAt = { nr, nc }; break; }
-      }
-      if (!mergedAt) break;
-      this.grid[mergedAt.nr][mergedAt.nc] = 0;
-      touchedCols.add(mergedAt.nc);
-      chainIndex += 1;
-      value *= 2;
-      scoreGained += value * this._multiplier(chainIndex);
-      steps.push({ type: 'merge', from: { row: mergedAt.nr, col: mergedAt.nc }, at: { row, col }, value });
-    }
-
-    let popped = false;
-    if (value >= POP_THRESHOLD) {
-      this.grid[row][col] = 0;
-      scoreGained += POP_BONUS;
-      popped = true;
-      this.events.push('pop');
-      steps.push({ type: 'pop', row, col, value });
-    } else {
-      this.grid[row][col] = value;
-    }
-
-    // 合体やポップで空いたマスには、同じ列の上のブロックが重力で落ちてくる。
-    // これにより「どの列を撃つか」が実際に盤面の並びを作り変えるようになる。
-    const gravityMoves = {};
-    for (const c of touchedCols) {
-      const moves = this._applyGravity(c);
-      if (moves.length) gravityMoves[c] = moves;
-    }
-
-    // 列が完全に空になったら、左右の列を詰める。これにより盤面が進むほど
-    // 残ったブロック同士が自然に近づき、終盤も連鎖の機会が失われない。
-    const columnShift = this._compactColumnsHorizontally();
-
-    this.score += scoreGained;
-    this.events.push(chainIndex > 0 ? 'merge' : 'hit');
-    this.lastResolve = { row, col, finalValue: value, chainIndex, scoreGained, popped };
-    this.lastResolveSteps = steps;
-    this.lastGravityMoves = gravityMoves;
-    this.lastColumnShift = columnShift;
+    this.score += result.scoreGained;
+    this.events.push(result.chainIndex > 0 ? 'merge' : 'hit');
+    if (result.popped) this.events.push('pop');
+    this.lastResolve = {
+      row, col, finalValue: result.finalValue, chainIndex: result.chainIndex,
+      scoreGained: result.scoreGained, popped: result.popped,
+    };
+    this.lastResolveSteps = result.steps;
+    this.lastGravityMoves = result.gravityMoves;
+    this.lastColumnShift = result.columnShift;
 
     if (this.blockCount === 0) {
       this._cleared();
     } else {
       this._checkAmmoOut();
     }
-  }
-
-  // 戻り値: このマスで実際に落下したブロックの移動一覧(アニメーション用)
-  _applyGravity(col) {
-    return dropColumn(this.grid, col, GRID_ROWS);
-  }
-
-  // 完全に空になった列を詰める(非空の列を元の左右順を保ったまま左詰めにする)
-  _compactColumnsHorizontally() {
-    const { grid, shifts } = packColumnsLeft(this.grid, GRID_ROWS, GRID_COLS);
-    if (shifts.length) this.grid = grid;
-    return shifts;
+    this._emit();
   }
 
   _checkAmmoOut() {
     if (this.phase === 'playing' && this.shotsUsed >= SHOT_LIMIT) {
       this._gameOver();
     }
-  }
-
-  _multiplier(chainIndex) {
-    return 1 + chainIndex * CHAIN_MULT_STEP;
   }
 
   _cleared() {
@@ -358,7 +380,6 @@ class MegaMergeGame {
 
   _gameOver() {
     this.phase = 'gameOver';
-    this.bullet = null;
     this.events.push('gameOver');
     this._saveHighScoreIfRecord();
   }
@@ -376,4 +397,8 @@ class MegaMergeGame {
   }
 }
 
-export { MegaMergeGame, POP_THRESHOLD, POP_BONUS, SHOT_LIMIT, dropColumn, packColumnsLeft };
+export {
+  MegaMergeGame, POP_THRESHOLD, POP_BONUS, SHOT_LIMIT,
+  dropColumn, packColumnsLeft, resolveHitPure, simulateShot, estimateParShots,
+  frontmostRow, occupiedColumns, countBlocks,
+};

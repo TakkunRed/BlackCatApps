@@ -6,7 +6,10 @@ if (typeof globalThis.localStorage === 'undefined') {
   };
 }
 
-const { MegaMergeGame, GRID_ROWS, GRID_COLS, PLAYER_W, SHOT_LIMIT } = await import('../js/game.js');
+const {
+  MegaMergeGame, GRID_ROWS, GRID_COLS, SHOT_LIMIT,
+  simulateShot, estimateParShots,
+} = await import('../js/game.js');
 
 function assert(cond, label) {
   console.log(`${cond ? 'PASS' : 'FAIL'} ${label}`);
@@ -37,6 +40,7 @@ const BOTTOM = GRID_ROWS - 1;
   const allPow2 = g.grid.flat().every((v) => v > 0 && (v & (v - 1)) === 0);
   assert(allPow2, 'every seeded value is a power of two');
   assert(g.shotsRemaining === SHOT_LIMIT, 'shotsRemaining starts at the full shot limit');
+  assert(typeof g.parTarget === 'number' && g.parTarget > 0, 'parTarget is computed on a fresh board');
   g.quit();
 }
 
@@ -61,7 +65,7 @@ const BOTTOM = GRID_ROWS - 1;
   g.quit();
 }
 
-// 1連鎖: 隣接する同じ数字と合体してさらに2倍、連鎖ボーナスが乗る
+// 1連鎖: 隣接する同じ数字(直撃後の値)と合体してさらに2倍、連鎖ボーナスが乗る
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
@@ -79,6 +83,20 @@ const BOTTOM = GRID_ROWS - 1;
   g.quit();
 }
 
+// NEW: 直撃前の「元の値」と同じ隣接ブロックも合体できる(以前は不可能だった組み合わせ)
+{
+  const g = new MegaMergeGame(() => {});
+  g.start({ skipReady: true });
+  g.grid = withAnchors(emptyGrid(), [3]);
+  g.grid[3][3] = 4; // 撃つと8になる
+  g.grid[2][3] = 4; // 上隣: 直撃前の"元の値"(4)と同じ → まず合体してから2倍 → 8
+  g._resolveHit(3, 3);
+  assert(g.lastResolve.chainIndex === 1, 'a neighbor matching the pre-hit original value now merges');
+  assert(g.lastResolve.finalValue === 8, 'the merge resolves to double the original value');
+  assert(g.lastResolveSteps[0].type === 'merge', 'step 0 is itself a merge when the original value matches a neighbor');
+  g.quit();
+}
+
 // 隣接探索の優先順: 上→右→下→左
 {
   const g = new MegaMergeGame(() => {});
@@ -91,6 +109,24 @@ const BOTTOM = GRID_ROWS - 1;
   assert(g.lastResolve.chainIndex === 1, 'only one merge happens even though two neighbors matched');
   assert(g.grid.flat().filter((v) => v === 4).length === 1, 'only the untouched neighbor still shows as a plain 4 (the one above was consumed)');
   assert(g.grid.some((row) => row[4] === 4), 'the neighbor to the right is left untouched that turn');
+  g.quit();
+}
+
+// 横に3つ同じ値が並んでいても、合体するのは隣り合う2つまで(2048の仕様どおり)
+// 列は常に左詰めで管理されるため、対象の3列は左端(0,1,2)に揃えて配置する。
+{
+  const g = new MegaMergeGame(() => {});
+  g.start({ skipReady: true });
+  g.grid = emptyGrid();
+  g.grid[3][1] = 2; // 撃つマス
+  g.grid[3][2] = 2; // 右隣: 優先順位の都合で先にこちらと合体する
+  g.grid[3][0] = 2; // 左隣: 合体せず単独の2として残る
+  g.grid[0][2] = 99; // 右隣が消えた後も列2が完全に空にならないようにする目印
+  g._resolveHit(3, 1);
+  assert(g.lastResolve.chainIndex === 1, 'three in a row still only produces one merge (two blocks combine)');
+  assert(g.grid[BOTTOM][1] === 4, 'the hit cell reaches 4 after the single merge');
+  assert(g.grid.some((row) => row[0] === 2), 'the far-side neighbor is left untouched as a plain 2');
+  assert(g.grid[BOTTOM][2] === 99, 'the marker above the consumed neighbor falls down within its own column');
   g.quit();
 }
 
@@ -126,7 +162,7 @@ const BOTTOM = GRID_ROWS - 1;
   g.quit();
 }
 
-// 2048到達でポップして消滅し、ボーナス得点が入る(重力適用後も周囲の列は無事)
+// 2048到達でポップして消滅し、ボーナス得点が入る
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
@@ -153,44 +189,66 @@ const BOTTOM = GRID_ROWS - 1;
   g.quit();
 }
 
-// fire(): 同時に1発まで、ショット数がカウントされる
+// shoot(col): タップ操作で即座に解決される(移動・飛翔時間は無い)
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
-  g.fire();
-  assert(g.bullet !== null, 'fire() spawns a bullet');
-  assert(g.shotsUsed === 1, 'shotsUsed increments');
+  g.grid = withAnchors(emptyGrid(), [3]);
+  g.grid[3][3] = 2;
+  g.shoot(3);
+  assert(g.shotsUsed === 1, 'shoot() increments shotsUsed');
   assert(g.shotsRemaining === SHOT_LIMIT - 1, 'shotsRemaining decrements along with shotsUsed');
-  const before = g.bullet;
-  g.fire();
-  assert(g.bullet === before, 'a second fire() while a bullet is active does nothing');
-  assert(g.shotsUsed === 1, 'shotsUsed does not increment when the shot is ignored');
+  assert(g.score === 4, 'shoot() resolves the hit immediately and scores it');
+  assert(g.grid[BOTTOM][3] === 4, 'the grid reflects the resolved hit right away');
   g.quit();
 }
 
-// 列が空ならミス: 弾は何にも当たらず画面上端で消える
-{
-  const g = new MegaMergeGame(() => {});
-  g.start({ skipReady: true });
-  g.grid = emptyGrid(); // 全列空
-  g.fire();
-  for (let i = 0; i < 100; i++) g._moveBullet(0.05);
-  assert(g.bullet === null, 'a bullet over an empty column disappears without scoring');
-  assert(g.score === 0, 'no score is awarded on a miss');
-  g.quit();
-}
-
-// 弾数上限に達すると、盤面が残っていてもゲームオーバーになる(実際の着弾経由)
+// shoot(): 空の列を指定しても何も起きない
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
   g.grid = emptyGrid();
-  // 消費しても盤面が空にならないよう、たくさんブロックを置いておく(合体しない値をばらけさせる)
-  for (let c = 0; c < GRID_COLS; c++) g.grid[BOTTOM][c] = 2 << c; // 2,4,8,16,32,64 (隣同士が一致しない)
+  g.shoot(0);
+  assert(g.shotsUsed === 0, 'shooting an empty column does not consume a shot');
+  g.quit();
+}
+
+// shoot(): プレイ中以外は無視される
+{
+  const g = new MegaMergeGame(() => {});
+  g.start({ skipReady: true });
+  g.grid = withAnchors(emptyGrid(), [3]);
+  g.grid[3][3] = 2;
+  g.pause();
+  g.shoot(3);
+  assert(g.shotsUsed === 0, 'shoot() is ignored while paused');
+  assert(g.grid[3][3] === 2, 'the grid is untouched while paused');
+  g.quit();
+}
+
+// shoot(): 弾切れ後は無視される
+{
+  const g = new MegaMergeGame(() => {});
+  g.start({ skipReady: true });
+  g.grid = withAnchors(emptyGrid(), [3]);
+  g.grid[3][3] = 2;
+  g.shotsUsed = SHOT_LIMIT;
+  g.shoot(3);
+  assert(g.shotsUsed === SHOT_LIMIT, 'shoot() does not go past the shot limit');
+  assert(g.grid[3][3] === 2, 'the grid is untouched once ammo is exhausted');
+  g.quit();
+}
+
+// 弾数上限に達すると、盤面が残っていてもゲームオーバーになる(shoot()経由の実際の操作で確認)
+{
+  const g = new MegaMergeGame(() => {});
+  g.start({ skipReady: true });
+  g.grid = emptyGrid();
+  // 消費しても盤面が空にならないよう、隣同士が一致しない値をばらけさせて置く
+  for (let c = 0; c < GRID_COLS; c++) g.grid[BOTTOM][c] = 2 << c; // 2,4,8,16,32,64
   g.shotsUsed = SHOT_LIMIT - 1; // 次の1発でちょうど上限に到達する
-  g.fire(); // shotsUsed が SHOT_LIMIT になる
-  assert(g.shotsUsed === SHOT_LIMIT, 'fire() increments shotsUsed up to the limit');
-  for (let i = 0; i < 50; i++) g._moveBullet(0.05); // 着弾するまで進める
+  g.shoot(0);
+  assert(g.shotsUsed === SHOT_LIMIT, 'shoot() increments shotsUsed up to the limit');
   assert(g.phase === 'gameOver', 'running out of shots with blocks remaining ends the game');
   g.quit();
 }
@@ -218,32 +276,18 @@ const BOTTOM = GRID_ROWS - 1;
   g.quit();
 }
 
-// プレイヤーの移動は画面端でクランプされ、ドラッグで直接追従できる
-{
-  const g = new MegaMergeGame(() => {});
-  g.start({ skipReady: true });
-  g.setMoveDir(-1);
-  for (let i = 0; i < 200; i++) g.update(0.1);
-  assert(g.player.x >= 2, 'player does not move past the left edge');
-
-  g.setDragTarget(150);
-  g.update(0.016);
-  assert(Math.abs(g.player.x - (150 - PLAYER_W / 2)) < 0.01, 'drag target directly positions the player center');
-  g.clearDragTarget();
-  g.quit();
-}
-
 // 一時停止/再開
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
+  g.grid = withAnchors(emptyGrid(), [3]);
+  g.grid[3][3] = 2;
   g.togglePause();
   assert(g.phase === 'paused', 'togglePause() pauses from playing');
 
   const scoreBefore = g.score;
-  g.fire();
-  assert(g.bullet === null, 'fire() is ignored while paused');
-  assert(g.score === scoreBefore, 'score is unaffected while paused');
+  g.shoot(3);
+  assert(g.score === scoreBefore, 'shoot() is ignored while paused');
 
   g.togglePause();
   assert(g.phase === 'playing', 'togglePause() resumes from paused');
@@ -326,6 +370,39 @@ const BOTTOM = GRID_ROWS - 1;
   const g2 = new MegaMergeGame(() => {});
   assert(g2.highScore === recorded, 'a fresh instance reads the persisted highScore back');
   g1.quit();
+}
+
+// simulateShot(): 純粋関数で、元のgridを変更しない
+{
+  const base = emptyGrid();
+  base[3][3] = 2;
+  const result = simulateShot(base, 3);
+  assert(result.finalValue === 4, 'simulateShot resolves the hit on a cloned grid');
+  assert(base[3][3] === 2, 'simulateShot does not mutate the grid passed in');
+  // 盤面には他に何も無いため、水平圧縮で列3の内容は左詰めの列0に移る。
+  assert(result.grid[BOTTOM][0] === 4, 'the returned grid reflects the resolved hit, repacked to the left');
+}
+
+// simulateShot(): 空の列はnullを返す
+{
+  assert(simulateShot(emptyGrid(), 0) === null, 'simulateShot on an empty column returns null');
+}
+
+// estimateParShots(): 孤立した1マスは、2048に到達するまで同じマスを撃ち続けるしかない(2→4→…→2048は10発)
+{
+  const grid = emptyGrid();
+  grid[BOTTOM][0] = 2;
+  assert(estimateParShots(grid) === 10, 'a single isolated block needs exactly 10 doublings to pop (got a different value)');
+}
+
+// estimateParShots(): 実際にランダム生成された盤面でも、高速かつ妥当な値を返す
+{
+  const g = new MegaMergeGame(() => {});
+  g.start({ skipReady: true });
+  const recomputed = estimateParShots(g.grid.map((r) => [...r]));
+  assert(g.parTarget === recomputed, 'reset() stores the same par estimate that estimateParShots computes directly');
+  assert(g.parTarget < SHOT_LIMIT, 'the par estimate for a typical board is comfortably under the shot limit');
+  g.quit();
 }
 
 console.log('done');
