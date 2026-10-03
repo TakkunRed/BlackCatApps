@@ -8,7 +8,7 @@ const COLORS = {
   textDark: '#1c1d1f',
   textLight: '#eafaf0',
   flash: '#ffffff',
-  colHover: 'rgba(167, 139, 250, 0.1)',
+  cellHover: 'rgba(167, 139, 250, 0.3)',
 };
 
 function valueColor(v) {
@@ -51,18 +51,18 @@ function drawBlock(ctx, x, y, value, { scale = 1, alpha = 1, flash = 0 } = {}) {
  *   - grid: 通常描画に使うグリッド(省略時は g.grid)
  *   - skip: Set<'row,col'> 通常描画をスキップするセル(floaterで個別に描くため)
  *   - floaters: [{x, y, value, scale, alpha, flash}] ピクセル座標で個別に描く要素
- * @param {number|null} [hoverCol] タップ可能であることを示すホバー中の列(nullで非表示)
+ * @param {{row:number, col:number}|null} [hoverCell] タップ可能であることを示すホバー中のマス(nullで非表示)
  */
-function drawField(ctx, g, anim, hoverCol) {
+function drawField(ctx, g, anim, hoverCell) {
   ctx.clearRect(0, 0, FIELD_W, FIELD_H);
   ctx.fillStyle = COLORS.bg;
   ctx.fillRect(0, 0, FIELD_W, FIELD_H);
 
   if (!g.active) return;
 
-  if (hoverCol !== null && hoverCol !== undefined && g.phase === 'playing') {
-    ctx.fillStyle = COLORS.colHover;
-    ctx.fillRect(cellX(hoverCol), 0, CELL_W, FIELD_H);
+  if (hoverCell && g.phase === 'playing' && g.grid[hoverCell.row][hoverCell.col]) {
+    ctx.fillStyle = COLORS.cellHover;
+    ctx.fillRect(cellX(hoverCell.col), cellY(hoverCell.row), CELL_W, CELL_H);
   }
 
   const grid = (anim && anim.grid) || g.grid;

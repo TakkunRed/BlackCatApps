@@ -8,7 +8,7 @@ if (typeof globalThis.localStorage === 'undefined') {
 
 const {
   MegaMergeGame, GRID_ROWS, GRID_COLS, SHOT_LIMIT,
-  simulateShot, estimateParShots,
+  simulateShot, estimateParShots, occupiedCells,
 } = await import('../js/game.js');
 
 function assert(cond, label) {
@@ -83,7 +83,7 @@ const BOTTOM = GRID_ROWS - 1;
   g.quit();
 }
 
-// NEW: 直撃前の「元の値」と同じ隣接ブロックも合体できる(以前は不可能だった組み合わせ)
+// 直撃前の「元の値」と同じ隣接ブロックも合体できる(v3で追加)
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
@@ -91,58 +91,62 @@ const BOTTOM = GRID_ROWS - 1;
   g.grid[3][3] = 4; // 撃つと8になる
   g.grid[2][3] = 4; // 上隣: 直撃前の"元の値"(4)と同じ → まず合体してから2倍 → 8
   g._resolveHit(3, 3);
-  assert(g.lastResolve.chainIndex === 1, 'a neighbor matching the pre-hit original value now merges');
+  assert(g.lastResolve.chainIndex === 1, 'a neighbor matching the pre-hit original value merges');
   assert(g.lastResolve.finalValue === 8, 'the merge resolves to double the original value');
   assert(g.lastResolveSteps[0].type === 'merge', 'step 0 is itself a merge when the original value matches a neighbor');
   g.quit();
 }
 
-// 隣接探索の優先順: 上→右→下→左
+// NEW: 前後左右で同時に複数一致した場合、優先順位で1個だけ選ぶのではなく全部まとめて一気に合体する
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
   g.grid = withAnchors(emptyGrid(), [3, 4]);
-  g.grid[3][3] = 2;
-  g.grid[2][3] = 4; // 上
-  g.grid[3][4] = 4; // 右 (上と同値でどちらも対象になり得る状況)
+  g.grid[3][3] = 2; // 撃つマス -> 4になる
+  g.grid[2][3] = 4; // 上: 直撃後の値(4)と一致
+  g.grid[3][4] = 4; // 右: 直撃後の値(4)と一致(同時に一致する2方向)
   g._resolveHit(3, 3);
-  assert(g.lastResolve.chainIndex === 1, 'only one merge happens even though two neighbors matched');
-  assert(g.grid.flat().filter((v) => v === 4).length === 1, 'only the untouched neighbor still shows as a plain 4 (the one above was consumed)');
-  assert(g.grid.some((row) => row[4] === 4), 'the neighbor to the right is left untouched that turn');
+  assert(g.lastResolve.chainIndex === 2, 'both simultaneously-matching neighbors merge in the same action (not just one)');
+  assert(g.lastResolve.finalValue === 8, 'absorbing both neighbors at once still doubles the value only once per step');
+  assert(g.grid.flat().filter((v) => v === 4).length === 0, 'both matching neighbors are consumed, none left as a plain 4');
+  // step0(hit,4): 4*1=4
+  // step1(merge,2個同時,8): 8*1.5=12, 8*2=16
+  // 合計 32
+  assert(g.score === 32, `simultaneous absorption scores each merged block individually (got ${g.score})`);
   g.quit();
 }
 
-// 横に3つ同じ値が並んでいても、合体するのは隣り合う2つまで(2048の仕様どおり)
-// 列は常に左詰めで管理されるため、対象の3列は左端(0,1,2)に揃えて配置する。
+// NEW: 横に3つ同じ値が並んでいて真ん中を撃つと、今度は3つとも一気に合体する(以前は2つまでだった)
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
   g.grid = emptyGrid();
-  g.grid[3][1] = 2; // 撃つマス
-  g.grid[3][2] = 2; // 右隣: 優先順位の都合で先にこちらと合体する
-  g.grid[3][0] = 2; // 左隣: 合体せず単独の2として残る
-  g.grid[0][2] = 99; // 右隣が消えた後も列2が完全に空にならないようにする目印
+  g.grid[3][1] = 2; // 撃つマス(3つの真ん中)
+  g.grid[3][2] = 2; // 右隣
+  g.grid[3][0] = 2; // 左隣
   g._resolveHit(3, 1);
-  assert(g.lastResolve.chainIndex === 1, 'three in a row still only produces one merge (two blocks combine)');
-  assert(g.grid[BOTTOM][1] === 4, 'the hit cell reaches 4 after the single merge');
-  assert(g.grid.some((row) => row[0] === 2), 'the far-side neighbor is left untouched as a plain 2');
-  assert(g.grid[BOTTOM][2] === 99, 'the marker above the consumed neighbor falls down within its own column');
+  assert(g.lastResolve.chainIndex === 2, 'hitting the middle of three in a row merges both sides at once');
+  assert(g.lastResolve.finalValue === 4, 'three 2s merging at once reach 4 (one doubling, all three consumed)');
+  assert(g.blockCount === 1, 'all three original blocks are gone, leaving only the merged result');
   g.quit();
 }
 
-// 多段連鎖: 合体のたびに数字と倍率の両方が伸びていく
+// NEW: 十字型(上下左右すべて)が同時に一致すると、4個まとめて一気に合体する
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
   g.grid = emptyGrid();
-  g.grid[3][3] = 2;  // -> 4
-  g.grid[2][3] = 4;  // 上: 4と合体 -> 8
-  g.grid[3][2] = 8;  // 左: 8と合体 -> 16
+  g.grid[3][3] = 2; // 撃つマス
+  g.grid[2][3] = 2; // 上
+  g.grid[3][4] = 2; // 右
+  g.grid[4][3] = 2; // 下
+  g.grid[3][2] = 2; // 左
   g._resolveHit(3, 3);
-  assert(g.lastResolve.finalValue === 16, 'two chained merges reach 16');
-  assert(g.lastResolve.chainIndex === 2, 'chainIndex counts both merges');
-  // step0: 4*1=4, step1: 8*1.5=12, step2: 16*2=32 → 合計48
-  assert(g.score === 48, `multi-step chain score matches the escalating formula (got ${g.score})`);
+  assert(g.lastResolve.chainIndex === 4, 'all four neighbors merge simultaneously in a single tap');
+  assert(g.lastResolve.finalValue === 4, 'a 4-way simultaneous merge still only doubles the value once');
+  assert(g.blockCount === 1, 'only the merged result remains after a full cross-shaped merge');
+  // step0(merge,4個同時,4): 4*1=4, 4*1.5=6, 4*2=8, 4*2.5=10 → 合計28
+  assert(g.score === 28, `a 4-way simultaneous merge scores every absorbed block (got ${g.score})`);
   g.quit();
 }
 
@@ -189,13 +193,13 @@ const BOTTOM = GRID_ROWS - 1;
   g.quit();
 }
 
-// shoot(col): タップ操作で即座に解決される(移動・飛翔時間は無い)
+// shoot(row, col): タップ操作で即座に解決される(移動・飛翔時間は無い)
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
   g.grid = withAnchors(emptyGrid(), [3]);
   g.grid[3][3] = 2;
-  g.shoot(3);
+  g.shoot(3, 3);
   assert(g.shotsUsed === 1, 'shoot() increments shotsUsed');
   assert(g.shotsRemaining === SHOT_LIMIT - 1, 'shotsRemaining decrements along with shotsUsed');
   assert(g.score === 4, 'shoot() resolves the hit immediately and scores it');
@@ -203,13 +207,27 @@ const BOTTOM = GRID_ROWS - 1;
   g.quit();
 }
 
-// shoot(): 空の列を指定しても何も起きない
+// NEW: 盤面上のどのマスでも直接タップできる(列の最前面でなくてもよい)
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
   g.grid = emptyGrid();
-  g.shoot(0);
-  assert(g.shotsUsed === 0, 'shooting an empty column does not consume a shot');
+  g.grid[1][0] = 2; // 列0の上の方(最前面ではない)
+  g.grid[5][0] = 9; // 同じ列の下(無関係の目印)
+  g.shoot(1, 0); // 最前面ではない(1,0)を直接指定してタップ
+  assert(g.shotsUsed === 1, 'tapping a non-frontmost cell is accepted');
+  assert(g.grid[4][0] === 4, 'the directly-tapped block resolves and falls with gravity afterward');
+  assert(g.grid[5][0] === 9, 'the untouched marker stays below it');
+  g.quit();
+}
+
+// shoot(): 空のマスを指定しても何も起きない
+{
+  const g = new MegaMergeGame(() => {});
+  g.start({ skipReady: true });
+  g.grid = emptyGrid();
+  g.shoot(3, 0);
+  assert(g.shotsUsed === 0, 'shooting an empty cell does not consume a shot');
   g.quit();
 }
 
@@ -220,7 +238,7 @@ const BOTTOM = GRID_ROWS - 1;
   g.grid = withAnchors(emptyGrid(), [3]);
   g.grid[3][3] = 2;
   g.pause();
-  g.shoot(3);
+  g.shoot(3, 3);
   assert(g.shotsUsed === 0, 'shoot() is ignored while paused');
   assert(g.grid[3][3] === 2, 'the grid is untouched while paused');
   g.quit();
@@ -233,7 +251,7 @@ const BOTTOM = GRID_ROWS - 1;
   g.grid = withAnchors(emptyGrid(), [3]);
   g.grid[3][3] = 2;
   g.shotsUsed = SHOT_LIMIT;
-  g.shoot(3);
+  g.shoot(3, 3);
   assert(g.shotsUsed === SHOT_LIMIT, 'shoot() does not go past the shot limit');
   assert(g.grid[3][3] === 2, 'the grid is untouched once ammo is exhausted');
   g.quit();
@@ -247,7 +265,7 @@ const BOTTOM = GRID_ROWS - 1;
   // 消費しても盤面が空にならないよう、隣同士が一致しない値をばらけさせて置く
   for (let c = 0; c < GRID_COLS; c++) g.grid[BOTTOM][c] = 2 << c; // 2,4,8,16,32,64
   g.shotsUsed = SHOT_LIMIT - 1; // 次の1発でちょうど上限に到達する
-  g.shoot(0);
+  g.shoot(BOTTOM, 0);
   assert(g.shotsUsed === SHOT_LIMIT, 'shoot() increments shotsUsed up to the limit');
   assert(g.phase === 'gameOver', 'running out of shots with blocks remaining ends the game');
   g.quit();
@@ -286,7 +304,7 @@ const BOTTOM = GRID_ROWS - 1;
   assert(g.phase === 'paused', 'togglePause() pauses from playing');
 
   const scoreBefore = g.score;
-  g.shoot(3);
+  g.shoot(3, 3);
   assert(g.score === scoreBefore, 'shoot() is ignored while paused');
 
   g.togglePause();
@@ -339,7 +357,22 @@ const BOTTOM = GRID_ROWS - 1;
   const steps = g.lastResolveSteps;
   assert(steps[0].type === 'hit' && steps[0].value === 4, 'step 0 is the initial hit, doubled to 4');
   assert(steps[1].type === 'merge' && steps[1].value === 8, 'step 1 is the merge, reaching 8');
-  assert(steps[1].from.row === 2 && steps[1].from.col === 3, 'the merge step records which cell was consumed');
+  assert(Array.isArray(steps[1].from) && steps[1].from.length === 1, 'the merge step records an array of consumed cells');
+  assert(steps[1].from[0].row === 2 && steps[1].from[0].col === 3, 'the merge step records which cell was consumed');
+  g.quit();
+}
+
+// 複数同時合体でも、1ステップのfrom配列にまとめて記録される
+{
+  const g = new MegaMergeGame(() => {});
+  g.start({ skipReady: true });
+  g.grid = withAnchors(emptyGrid(), [3, 4]);
+  g.grid[3][3] = 2;
+  g.grid[2][3] = 4; // 上
+  g.grid[3][4] = 4; // 右(上と同時に一致)
+  g._resolveHit(3, 3);
+  const steps = g.lastResolveSteps;
+  assert(steps[1].type === 'merge' && steps[1].from.length === 2, 'a single merge step can carry multiple simultaneously-absorbed cells');
   g.quit();
 }
 
@@ -372,20 +405,30 @@ const BOTTOM = GRID_ROWS - 1;
   g1.quit();
 }
 
-// simulateShot(): 純粋関数で、元のgridを変更しない
+// occupiedCells(): 盤面上の空でない全マスを列挙する
+{
+  const grid = emptyGrid();
+  grid[0][0] = 2;
+  grid[5][5] = 4;
+  const cells = occupiedCells(grid);
+  assert(cells.length === 2, 'occupiedCells lists every non-empty cell');
+  assert(cells.some((c) => c.row === 0 && c.col === 0) && cells.some((c) => c.row === 5 && c.col === 5), 'occupiedCells reports the correct coordinates');
+}
+
+// simulateShot(row, col): 純粋関数で、元のgridを変更しない
 {
   const base = emptyGrid();
   base[3][3] = 2;
-  const result = simulateShot(base, 3);
+  const result = simulateShot(base, 3, 3);
   assert(result.finalValue === 4, 'simulateShot resolves the hit on a cloned grid');
   assert(base[3][3] === 2, 'simulateShot does not mutate the grid passed in');
   // 盤面には他に何も無いため、水平圧縮で列3の内容は左詰めの列0に移る。
   assert(result.grid[BOTTOM][0] === 4, 'the returned grid reflects the resolved hit, repacked to the left');
 }
 
-// simulateShot(): 空の列はnullを返す
+// simulateShot(): 空のマスはnullを返す
 {
-  assert(simulateShot(emptyGrid(), 0) === null, 'simulateShot on an empty column returns null');
+  assert(simulateShot(emptyGrid(), 3, 0) === null, 'simulateShot on an empty cell returns null');
 }
 
 // estimateParShots(): 孤立した1マスは、2048に到達するまで同じマスを撃ち続けるしかない(2→4→…→2048は10発)

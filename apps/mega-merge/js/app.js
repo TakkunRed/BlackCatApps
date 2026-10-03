@@ -1,6 +1,6 @@
 import {
-  MegaMergeGame, FIELD_W, FIELD_H, GRID_ROWS, GRID_COLS, GRID_MARGIN_X, CELL_W, CELL_GAP,
-  dropColumn, packColumnsLeft, cellX, cellY,
+  MegaMergeGame, FIELD_W, FIELD_H, GRID_ROWS, GRID_COLS, GRID_MARGIN_X, GRID_TOP_Y, CELL_W, CELL_H, CELL_GAP,
+  dropColumn, packColumnsLeft, cellX, cellY, frontmostRow,
 } from './game.js';
 import { drawField } from './render.js';
 
@@ -125,7 +125,11 @@ function startAnimation(g) {
   const stages = [];
   for (const step of g.lastResolveSteps || []) {
     if (step.type === 'hit') stages.push({ kind: 'hit', row: step.row, col: step.col, value: step.value, duration: STAGE_DURATIONS.hit });
-    else if (step.type === 'merge') stages.push({ kind: 'merge', from: step.from, at: step.at, value: step.value, duration: STAGE_DURATIONS.merge });
+    else if (step.type === 'merge') {
+      // 同時に吸収したブロックが多いほど、一気に合体した感じがしっかり見えるよう長めに見せる。
+      const duration = STAGE_DURATIONS.merge + Math.max(0, step.from.length - 1) * 70;
+      stages.push({ kind: 'merge', from: step.from, at: step.at, value: step.value, duration });
+    }
     else if (step.type === 'pop') stages.push({ kind: 'pop', row: step.row, col: step.col, value: step.value, duration: STAGE_DURATIONS.pop });
   }
   if (g.lastGravityMoves && Object.keys(g.lastGravityMoves).length) {
@@ -144,7 +148,7 @@ function applyStageEnd(grid, stage) {
   if (stage.kind === 'hit') {
     grid[stage.row][stage.col] = stage.value;
   } else if (stage.kind === 'merge') {
-    grid[stage.from.row][stage.from.col] = 0;
+    for (const f of stage.from) grid[f.row][f.col] = 0;
     grid[stage.at.row][stage.at.col] = stage.value;
   } else if (stage.kind === 'pop') {
     grid[stage.row][stage.col] = 0;
@@ -184,13 +188,24 @@ function buildAnimFrame() {
     const scale = 0.7 + 0.3 * p;
     floaters.push({ x: cellX(stage.col), y: cellY(stage.row), value: stage.value, scale, alpha: 1, flash: (1 - p) * 0.6 });
   } else if (stage.kind === 'merge') {
+    // 前後左右で同時に一致したブロックは全部同時に(一気に)中心へ飛び込んでいく演出。
+    // 隣接マス分の移動距離はもともと短いので、縮小・フェードは終盤に一気に効かせて
+    // (p^3)、「ほぼ原寸のまま飛び込んで直前でスッと消える」見え方にして視認性を上げる。
     skip.add(`${stage.at.row},${stage.at.col}`);
-    skip.add(`${stage.from.row},${stage.from.col}`);
-    const fx = cellX(stage.from.col) + (cellX(stage.at.col) - cellX(stage.from.col)) * p;
-    const fy = cellY(stage.from.row) + (cellY(stage.at.row) - cellY(stage.from.row)) * p;
-    floaters.push({ x: fx, y: fy, value: anim.grid[stage.from.row][stage.from.col], scale: 1 - p, alpha: 1 - p });
-    const scale = p < 0.5 ? 1 + p * 0.4 : 1.2 - (p - 0.5) * 0.4;
-    floaters.push({ x: cellX(stage.at.col), y: cellY(stage.at.row), value: stage.value, scale, alpha: 1, flash: (1 - p) * 0.5 });
+    // 中心ブロック(弾むパンチ演出)を先に描き、飛び込んでくるブロックは後から描く。
+    // 逆順だと、終盤に中心が大きく膨らんだときに飛び込み中のブロックが下に隠れてしまう。
+    const punch = 0.4 + Math.max(0, stage.from.length - 1) * 0.18; // 同時吸収が多いほど大きく弾む
+    const scale = p < 0.5 ? 1 + p * punch : (1 + punch / 2) - (p - 0.5) * punch;
+    const flashBoost = Math.min(1, 0.5 + (stage.from.length - 1) * 0.15);
+    floaters.push({ x: cellX(stage.at.col), y: cellY(stage.at.row), value: stage.value, scale, alpha: 1, flash: (1 - p) * flashBoost });
+
+    const shrink = 1 - p * p * p;
+    for (const f of stage.from) {
+      skip.add(`${f.row},${f.col}`);
+      const fx = cellX(f.col) + (cellX(stage.at.col) - cellX(f.col)) * p;
+      const fy = cellY(f.row) + (cellY(stage.at.row) - cellY(f.row)) * p;
+      floaters.push({ x: fx, y: fy, value: anim.grid[f.row][f.col], scale: shrink, alpha: shrink });
+    }
   } else if (stage.kind === 'pop') {
     skip.add(`${stage.row},${stage.col}`);
     floaters.push({ x: cellX(stage.col), y: cellY(stage.row), value: stage.value, scale: 1 + p * 0.6, alpha: 1 - p, flash: 1 });
@@ -199,6 +214,7 @@ function buildAnimFrame() {
       const col = Number(colStr);
       for (const m of moves) {
         skip.add(`${m.toRow},${col}`);
+        skip.add(`${m.fromRow},${col}`); // 移動元にも静止画が残らないようにする
         const y = cellY(m.fromRow) + (cellY(m.toRow) - cellY(m.fromRow)) * p;
         floaters.push({ x: cellX(col), y, value: m.value, scale: 1, alpha: 1 });
       }
@@ -221,29 +237,44 @@ function buildAnimFrame() {
   return { grid: anim.grid, skip, floaters };
 }
 
-// --- 入力: 列をタップ/クリックすると即座に解決する ---
+// --- 入力: 盤面上のどのブロックでも直接タップ/クリックすると即座に解決する ---
 function xToColumn(x) {
   const col = Math.floor((x - GRID_MARGIN_X) / (CELL_W + CELL_GAP));
   if (col < 0 || col >= GRID_COLS) return null;
   return col;
 }
+function yToRow(y) {
+  const row = Math.floor((y - GRID_TOP_Y) / (CELL_H + CELL_GAP));
+  if (row < 0 || row >= GRID_ROWS) return null;
+  return row;
+}
 function clientXToField(clientX) {
   const rect = canvas.getBoundingClientRect();
   return (clientX - rect.left) * (FIELD_W / rect.width);
 }
+function clientYToField(clientY) {
+  const rect = canvas.getBoundingClientRect();
+  return (clientY - rect.top) * (FIELD_H / rect.height);
+}
+function eventToCell(e) {
+  const col = xToColumn(clientXToField(e.clientX));
+  const row = yToRow(clientYToField(e.clientY));
+  if (col === null || row === null) return null;
+  return { row, col };
+}
 
-let hoverCol = null;
+let hoverCell = null;
 
 canvas.addEventListener('pointerdown', (e) => {
   if (tryAdvance()) return;
   if (anim) return; // アニメーション再生中は次の入力を受け付けない
-  const col = xToColumn(clientXToField(e.clientX));
-  if (col !== null) game.shoot(col);
+  const cell = eventToCell(e);
+  if (cell) game.shoot(cell.row, cell.col);
 });
 canvas.addEventListener('pointermove', (e) => {
-  hoverCol = xToColumn(clientXToField(e.clientX));
+  hoverCell = eventToCell(e);
 });
-canvas.addEventListener('pointerleave', () => { hoverCol = null; });
+canvas.addEventListener('pointerleave', () => { hoverCell = null; });
 
 overlay.addEventListener('click', () => { tryAdvance(); });
 btnPause.addEventListener('click', () => { game.togglePause(); });
@@ -252,12 +283,16 @@ btnSound.addEventListener('click', () => {
   btnSound.textContent = game.soundOn ? '♪ SOUND' : '♪ MUTE';
 });
 
-// --- キーボード: 数字キー1〜6で列を直接指定、Pで一時停止 ---
+// --- キーボード: 数字キー1〜6でその列の一番手前のブロックを撃つ、Pで一時停止 ---
 window.addEventListener('keydown', (e) => {
   if (e.repeat) return;
   if (tryAdvance()) return;
   if (e.key >= '1' && e.key <= String(GRID_COLS)) {
-    if (!anim) game.shoot(Number(e.key) - 1);
+    if (!anim) {
+      const col = Number(e.key) - 1;
+      const row = frontmostRow(game.grid, col);
+      if (row !== -1) game.shoot(row, col);
+    }
     return;
   }
   if (e.key === 'p' || e.key === 'P') { game.togglePause(); return; }
@@ -272,9 +307,9 @@ function loop(t) {
 
   if (anim) {
     advanceAnim(dt * 1000);
-    drawField(ctx, game, anim && buildAnimFrame(), hoverCol);
+    drawField(ctx, game, anim && buildAnimFrame(), hoverCell);
   } else {
-    drawField(ctx, game, null, hoverCol);
+    drawField(ctx, game, null, hoverCell);
   }
   requestAnimationFrame(loop);
 }
