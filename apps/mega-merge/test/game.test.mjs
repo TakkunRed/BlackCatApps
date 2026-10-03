@@ -16,6 +16,15 @@ function emptyGrid() {
   return Array.from({ length: GRID_ROWS }, () => Array(GRID_COLS).fill(0));
 }
 
+// 指定した列以外にアンカー(無関係な目印ブロック)を置き、それらの列が空にならないようにする。
+// これにより「列が完全に空になったら詰める」水平圧縮が、テスト対象の列位置をずらすのを防ぐ。
+function withAnchors(grid, keepCols) {
+  for (let c = 0; c < GRID_COLS; c++) {
+    if (!keepCols.includes(c)) grid[0][c] = 2;
+  }
+  return grid;
+}
+
 const BOTTOM = GRID_ROWS - 1;
 
 // 初期セットアップ
@@ -43,7 +52,7 @@ const BOTTOM = GRID_ROWS - 1;
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
-  g.grid = emptyGrid();
+  g.grid = withAnchors(emptyGrid(), [3]);
   g.grid[3][3] = 2; // 周囲は空なので連鎖しない
   g._resolveHit(3, 3);
   assert(g.grid[BOTTOM][3] === 4, 'a lone hit doubles the value and settles at the bottom of its column');
@@ -56,14 +65,14 @@ const BOTTOM = GRID_ROWS - 1;
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
-  g.grid = emptyGrid();
+  g.grid = withAnchors(emptyGrid(), [3]);
   g.grid[3][3] = 2; // 撃たれて4になる
   g.grid[2][3] = 4; // 上隣: 4と一致するので合体して8になる
   g._resolveHit(3, 3);
   // step0: 4 * 1       = 4
   // step1: 8 * 1.5     = 12
   // 合計 16
-  assert(g.blockCount === 1, 'the merged neighbor is consumed, leaving one block in that column');
+  assert(g.grid[2][3] === 0, 'the merged neighbor is consumed (removed from its old spot)');
   assert(g.grid[BOTTOM][3] === 8, 'the single remaining block (now 8) settles at the bottom after gravity');
   assert(g.score === 16, `chained score includes the chain-length bonus (got ${g.score})`);
   assert(g.lastResolve.chainIndex === 1, 'chainIndex is 1 after one merge');
@@ -74,7 +83,7 @@ const BOTTOM = GRID_ROWS - 1;
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
-  g.grid = emptyGrid();
+  g.grid = withAnchors(emptyGrid(), [3, 4]);
   g.grid[3][3] = 2;
   g.grid[2][3] = 4; // 上
   g.grid[3][4] = 4; // 右 (上と同値でどちらも対象になり得る状況)
@@ -105,7 +114,7 @@ const BOTTOM = GRID_ROWS - 1;
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
-  g.grid = emptyGrid();
+  g.grid = withAnchors(emptyGrid(), [2, 3]);
   g.grid[0][2] = 99; // 列2の一番上、撃った列(col3)とは無関係の目印
   g.grid[3][3] = 2;
   g.grid[2][3] = 4; // 合体して消える
@@ -238,6 +247,68 @@ const BOTTOM = GRID_ROWS - 1;
 
   g.togglePause();
   assert(g.phase === 'playing', 'togglePause() resumes from paused');
+  g.quit();
+}
+
+// 水平圧縮: 列が完全に空になると、右側の列が左へ詰める
+{
+  const g = new MegaMergeGame(() => {});
+  g.start({ skipReady: true });
+  g.grid = emptyGrid();
+  g.grid[BOTTOM][1] = 1024; // 撃つ列(1)。これ1個だけなので、ポップすると列1は完全に空になる
+  g.grid[BOTTOM][3] = 9;    // 列3の目印(値は合体に影響しない適当な数)
+  g.grid[BOTTOM][5] = 16;   // 列5の目印
+  g._resolveHit(BOTTOM, 1); // 1024→2048でポップ。列1が完全に空になる
+  assert(g.lastResolve.popped === true, 'sanity: the hit block popped');
+  assert(g.blockCount === 2, 'two marker blocks remain after column 1 pops empty');
+  // 圧縮は「空いた列の隣だけ」ではなく、盤面全体を常に隙間なく左詰めし続ける。
+  // 残っているのは列3・列5の中身だけなので、左から順に列0・列1に詰まる。
+  assert(g.grid[BOTTOM][0] === 9, 'the marker that was in column 3 repacks to column 0');
+  assert(g.grid[BOTTOM][1] === 16, 'the marker that was in column 5 repacks to column 1');
+  assert(
+    g.lastColumnShift.some((s) => s.fromCol === 3 && s.toCol === 0) &&
+    g.lastColumnShift.some((s) => s.fromCol === 5 && s.toCol === 1),
+    'lastColumnShift records both column moves for animation'
+  );
+  g.quit();
+}
+
+// 水平圧縮: 空になった列が無ければ、列の並びは変わらない
+{
+  const g = new MegaMergeGame(() => {});
+  g.start({ skipReady: true });
+  g.grid = withAnchors(emptyGrid(), [3]);
+  g.grid[3][3] = 2; // 単独で4になるだけ(列3は空にならない)
+  g._resolveHit(3, 3);
+  assert(g.lastColumnShift.length === 0, 'no columns move when nothing becomes fully empty');
+  g.quit();
+}
+
+// アニメーション用の詳細ステップ(lastResolveSteps)が、起きたことを順番どおりに記録している
+{
+  const g = new MegaMergeGame(() => {});
+  g.start({ skipReady: true });
+  g.grid = withAnchors(emptyGrid(), [3]);
+  g.grid[3][3] = 2;
+  g.grid[2][3] = 4; // 上と合体
+  g._resolveHit(3, 3);
+  const steps = g.lastResolveSteps;
+  assert(steps[0].type === 'hit' && steps[0].value === 4, 'step 0 is the initial hit, doubled to 4');
+  assert(steps[1].type === 'merge' && steps[1].value === 8, 'step 1 is the merge, reaching 8');
+  assert(steps[1].from.row === 2 && steps[1].from.col === 3, 'the merge step records which cell was consumed');
+  g.quit();
+}
+
+// ポップ時もステップに記録される
+{
+  const g = new MegaMergeGame(() => {});
+  g.start({ skipReady: true });
+  g.grid = withAnchors(emptyGrid(), [3]);
+  g.grid[3][3] = 1024;
+  g.grid[2][3] = 1024; // 合体して2048に到達、ポップ
+  g._resolveHit(3, 3);
+  const last = g.lastResolveSteps[g.lastResolveSteps.length - 1];
+  assert(last.type === 'pop' && last.value === 2048, 'the final step records the pop at 2048');
   g.quit();
 }
 

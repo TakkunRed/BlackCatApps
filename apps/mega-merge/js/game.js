@@ -56,6 +56,55 @@ function cellY(row) {
   return GRID_TOP_Y + row * (CELL_H + CELL_GAP);
 }
 
+// 純粋関数群: ゲーム本体(即時反映)とapp.js側のアニメーション(段階的に再現)の
+// 両方から同じロジックを使うため、グリッド操作をクラスの外に切り出している。
+
+// 指定した列の中身を下詰めにする。戻り値は実際に動いたブロックの移動一覧。
+function dropColumn(grid, col, rows) {
+  const before = [];
+  for (let row = 0; row < rows; row++) before.push(grid[row][col]);
+
+  const values = before.filter((v) => v);
+  for (let row = 0; row < rows; row++) grid[row][col] = 0;
+  let writeRow = rows - 1;
+  for (let i = values.length - 1; i >= 0; i--) {
+    grid[writeRow][col] = values[i];
+    writeRow -= 1;
+  }
+
+  const moves = [];
+  const srcRowsInOrder = [];
+  for (let row = 0; row < rows; row++) if (before[row]) srcRowsInOrder.push(row);
+  const destRow = rows - values.length;
+  for (let i = 0; i < values.length; i++) {
+    const from = srcRowsInOrder[i];
+    const to = destRow + i;
+    if (from !== to) moves.push({ value: values[i], fromRow: from, toRow: to });
+  }
+  return moves;
+}
+
+// 完全に空の列を詰め、非空の列を元の左右順を保ったまま左詰めにする。
+// 戻り値は実際に動いた列の移動一覧(grid自体は呼び出し側で差し替える)。
+function packColumnsLeft(grid, rows, cols) {
+  const nonEmptyCols = [];
+  for (let c = 0; c < cols; c++) {
+    let hasBlock = false;
+    for (let r = 0; r < rows; r++) if (grid[r][c]) { hasBlock = true; break; }
+    if (hasBlock) nonEmptyCols.push(c);
+  }
+
+  const newGrid = Array.from({ length: rows }, () => Array(cols).fill(0));
+  const shifts = [];
+  nonEmptyCols.forEach((fromCol, i) => {
+    const toCol = i;
+    for (let r = 0; r < rows; r++) newGrid[r][toCol] = grid[r][fromCol];
+    if (fromCol !== toCol) shifts.push({ fromCol, toCol });
+  });
+
+  return { grid: newGrid, shifts };
+}
+
 class MegaMergeGame {
   constructor(onChange) {
     this.onChange = onChange || (() => {});
@@ -224,6 +273,7 @@ class MegaMergeGame {
     let chainIndex = 0;
     let scoreGained = value * this._multiplier(0);
     const touchedCols = new Set([col]);
+    const steps = [{ type: 'hit', row, col, value }];
 
     for (;;) {
       let mergedAt = null;
@@ -238,6 +288,7 @@ class MegaMergeGame {
       chainIndex += 1;
       value *= 2;
       scoreGained += value * this._multiplier(chainIndex);
+      steps.push({ type: 'merge', from: { row: mergedAt.nr, col: mergedAt.nc }, at: { row, col }, value });
     }
 
     let popped = false;
@@ -246,17 +297,29 @@ class MegaMergeGame {
       scoreGained += POP_BONUS;
       popped = true;
       this.events.push('pop');
+      steps.push({ type: 'pop', row, col, value });
     } else {
       this.grid[row][col] = value;
     }
 
     // 合体やポップで空いたマスには、同じ列の上のブロックが重力で落ちてくる。
     // これにより「どの列を撃つか」が実際に盤面の並びを作り変えるようになる。
-    for (const c of touchedCols) this._applyGravity(c);
+    const gravityMoves = {};
+    for (const c of touchedCols) {
+      const moves = this._applyGravity(c);
+      if (moves.length) gravityMoves[c] = moves;
+    }
+
+    // 列が完全に空になったら、左右の列を詰める。これにより盤面が進むほど
+    // 残ったブロック同士が自然に近づき、終盤も連鎖の機会が失われない。
+    const columnShift = this._compactColumnsHorizontally();
 
     this.score += scoreGained;
     this.events.push(chainIndex > 0 ? 'merge' : 'hit');
     this.lastResolve = { row, col, finalValue: value, chainIndex, scoreGained, popped };
+    this.lastResolveSteps = steps;
+    this.lastGravityMoves = gravityMoves;
+    this.lastColumnShift = columnShift;
 
     if (this.blockCount === 0) {
       this._cleared();
@@ -265,17 +328,16 @@ class MegaMergeGame {
     }
   }
 
+  // 戻り値: このマスで実際に落下したブロックの移動一覧(アニメーション用)
   _applyGravity(col) {
-    const values = [];
-    for (let row = 0; row < GRID_ROWS; row++) {
-      if (this.grid[row][col]) values.push(this.grid[row][col]);
-    }
-    for (let row = 0; row < GRID_ROWS; row++) this.grid[row][col] = 0;
-    let writeRow = GRID_ROWS - 1;
-    for (let i = values.length - 1; i >= 0; i--) {
-      this.grid[writeRow][col] = values[i];
-      writeRow -= 1;
-    }
+    return dropColumn(this.grid, col, GRID_ROWS);
+  }
+
+  // 完全に空になった列を詰める(非空の列を元の左右順を保ったまま左詰めにする)
+  _compactColumnsHorizontally() {
+    const { grid, shifts } = packColumnsLeft(this.grid, GRID_ROWS, GRID_COLS);
+    if (shifts.length) this.grid = grid;
+    return shifts;
   }
 
   _checkAmmoOut() {
@@ -314,4 +376,4 @@ class MegaMergeGame {
   }
 }
 
-export { MegaMergeGame, POP_THRESHOLD, POP_BONUS, SHOT_LIMIT };
+export { MegaMergeGame, POP_THRESHOLD, POP_BONUS, SHOT_LIMIT, dropColumn, packColumnsLeft };

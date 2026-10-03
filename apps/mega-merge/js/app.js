@@ -1,5 +1,5 @@
-import { MegaMergeGame, FIELD_W, FIELD_H } from './game.js';
-import { drawField } from './render.js';
+import { MegaMergeGame, FIELD_W, FIELD_H, GRID_ROWS, GRID_COLS, dropColumn, packColumnsLeft } from './game.js';
+import { drawField, cellX, cellY } from './render.js';
 
 const game = new MegaMergeGame(onChange);
 window.__mmDebug = game; // devtoolsから状態確認する用(ゲームプレイには影響しない)
@@ -82,10 +82,135 @@ function updateOverlay() {
   }
 }
 
+// --- 合体・重力・列詰めの過程を見せるアニメーション ---
+// ロジック(game.js)は即座に最終状態まで計算してしまうので、ここでは
+// 「解決前のスナップショット」から出発し、記録されたステップを順番に再生することで
+// 連鎖の過程を視覚的に見せる。ゲームの状態そのものには一切手を加えない。
+let restGrid = null; // アニメ中でないときの表示用グリッド(常にgame.gridと同期)
+let lastSeenResolve = null;
+let anim = null;
+
+function cloneGrid(grid) { return grid.map((r) => [...r]); }
+
+const STAGE_DURATIONS = { hit: 150, merge: 190, pop: 240, gravity: 220, shift: 240 };
+
+function startAnimation(g) {
+  const stages = [];
+  for (const step of g.lastResolveSteps || []) {
+    if (step.type === 'hit') stages.push({ kind: 'hit', row: step.row, col: step.col, value: step.value, duration: STAGE_DURATIONS.hit });
+    else if (step.type === 'merge') stages.push({ kind: 'merge', from: step.from, at: step.at, value: step.value, duration: STAGE_DURATIONS.merge });
+    else if (step.type === 'pop') stages.push({ kind: 'pop', row: step.row, col: step.col, value: step.value, duration: STAGE_DURATIONS.pop });
+  }
+  if (g.lastGravityMoves && Object.keys(g.lastGravityMoves).length) {
+    stages.push({ kind: 'gravity', moves: g.lastGravityMoves, duration: STAGE_DURATIONS.gravity });
+  }
+  if (g.lastColumnShift && g.lastColumnShift.length) {
+    stages.push({ kind: 'shift', shifts: g.lastColumnShift, duration: STAGE_DURATIONS.shift });
+  }
+  if (!stages.length || !restGrid) return;
+
+  anim = { stages, index: 0, t: 0, grid: cloneGrid(restGrid) };
+}
+
+// 1段階が完了した時点のグリッドを確定させる(見た目の「結果」を次の段階の出発点にする)
+function applyStageEnd(grid, stage) {
+  if (stage.kind === 'hit') {
+    grid[stage.row][stage.col] = stage.value;
+  } else if (stage.kind === 'merge') {
+    grid[stage.from.row][stage.from.col] = 0;
+    grid[stage.at.row][stage.at.col] = stage.value;
+  } else if (stage.kind === 'pop') {
+    grid[stage.row][stage.col] = 0;
+  } else if (stage.kind === 'gravity') {
+    for (const col of Object.keys(stage.moves)) dropColumn(grid, Number(col), GRID_ROWS);
+  } else if (stage.kind === 'shift') {
+    const { grid: packed } = packColumnsLeft(grid, GRID_ROWS, GRID_COLS);
+    for (let r = 0; r < GRID_ROWS; r++) for (let c = 0; c < GRID_COLS; c++) grid[r][c] = packed[r][c];
+  }
+}
+
+function advanceAnim(dtMs) {
+  if (!anim) return;
+  anim.t += dtMs;
+  const stage = anim.stages[anim.index];
+  if (anim.t < stage.duration) return;
+  applyStageEnd(anim.grid, stage);
+  anim.index += 1;
+  anim.t = 0;
+  if (anim.index >= anim.stages.length) {
+    restGrid = cloneGrid(game.grid);
+    anim = null;
+  }
+}
+
+function ease(p) { return 1 - Math.pow(1 - p, 2); } // easeOutQuad
+
+// 現在のアニメーション段階から、描画用の(グリッド上書き・スキップ対象・フローター)を組み立てる
+function buildAnimFrame() {
+  const stage = anim.stages[anim.index];
+  const p = ease(Math.min(1, anim.t / stage.duration));
+  const skip = new Set();
+  const floaters = [];
+
+  if (stage.kind === 'hit') {
+    skip.add(`${stage.row},${stage.col}`);
+    const scale = 0.7 + 0.3 * p;
+    floaters.push({ x: cellX(stage.col), y: cellY(stage.row), value: stage.value, scale, alpha: 1, flash: (1 - p) * 0.6 });
+  } else if (stage.kind === 'merge') {
+    skip.add(`${stage.at.row},${stage.at.col}`);
+    skip.add(`${stage.from.row},${stage.from.col}`);
+    // 消える側: 合体先へ吸い込まれるように縮小しながら移動
+    const fx = cellX(stage.from.col) + (cellX(stage.at.col) - cellX(stage.from.col)) * p;
+    const fy = cellY(stage.from.row) + (cellY(stage.at.row) - cellY(stage.from.row)) * p;
+    floaters.push({ x: fx, y: fy, value: anim.grid[stage.from.row][stage.from.col], scale: 1 - p, alpha: 1 - p });
+    // 合体先: 新しい数字へパッと切り替わり、一瞬膨らむ
+    const scale = p < 0.5 ? 1 + p * 0.4 : 1.2 - (p - 0.5) * 0.4;
+    floaters.push({ x: cellX(stage.at.col), y: cellY(stage.at.row), value: stage.value, scale, alpha: 1, flash: (1 - p) * 0.5 });
+  } else if (stage.kind === 'pop') {
+    skip.add(`${stage.row},${stage.col}`);
+    floaters.push({ x: cellX(stage.col), y: cellY(stage.row), value: stage.value, scale: 1 + p * 0.6, alpha: 1 - p, flash: 1 });
+  } else if (stage.kind === 'gravity') {
+    for (const [colStr, moves] of Object.entries(stage.moves)) {
+      const col = Number(colStr);
+      for (const m of moves) {
+        skip.add(`${m.toRow},${col}`);
+        const y = cellY(m.fromRow) + (cellY(m.toRow) - cellY(m.fromRow)) * p;
+        floaters.push({ x: cellX(col), y, value: m.value, scale: 1, alpha: 1 });
+      }
+    }
+  } else if (stage.kind === 'shift') {
+    for (const s of stage.shifts) {
+      for (let row = 0; row < GRID_ROWS; row++) {
+        const v = anim.grid[row][s.fromCol];
+        if (!v) continue;
+        skip.add(`${row},${s.toCol}`);
+        const x = cellX(s.fromCol) + (cellX(s.toCol) - cellX(s.fromCol)) * p;
+        floaters.push({ x, y: cellY(row), value: v, scale: 1, alpha: 1 });
+      }
+    }
+  }
+
+  // shift段階ではanim.gridの列位置がまだ移動前のままなので、移動元の表示もスキップしておく
+  if (stage.kind === 'shift') {
+    for (const s of stage.shifts) {
+      for (let row = 0; row < GRID_ROWS; row++) skip.add(`${row},${s.fromCol}`);
+    }
+  }
+
+  return { grid: anim.grid, skip, floaters };
+}
+
 function onChange(g) {
   updateHud();
   updateOverlay();
   if (g.events && g.events.length) playEvents(g.events, g);
+
+  if (g.lastResolve && g.lastResolve !== lastSeenResolve) {
+    lastSeenResolve = g.lastResolve;
+    startAnimation(g);
+  } else if (!anim) {
+    restGrid = cloneGrid(g.grid);
+  }
 }
 
 function tryAdvance() {
@@ -120,7 +245,7 @@ btnFire.addEventListener('pointerdown', (e) => {
   if (tryAdvance()) return;
   heldFireButton = true;
   btnFire.classList.add('pressed');
-  game.fire();
+  if (!anim) game.fire();
 });
 const releaseFire = () => { heldFireButton = false; btnFire.classList.remove('pressed'); };
 btnFire.addEventListener('pointerup', releaseFire);
@@ -169,7 +294,7 @@ window.addEventListener('keydown', (e) => {
     if (e.repeat) return;
     if (tryAdvance()) return;
     heldFireButton = true;
-    game.fire();
+    if (!anim) game.fire();
     return;
   }
   if (keyPause.has(e.key)) { e.preventDefault(); if (!e.repeat) game.togglePause(); return; }
@@ -190,10 +315,16 @@ function loop(t) {
   dt = Math.min(dt, 0.05);
 
   if (game.phase === 'playing') {
-    if (heldFireButton) game.fire();
+    if (heldFireButton && !anim) game.fire();
     game.update(dt);
   }
-  drawField(ctx, game);
+
+  if (anim) {
+    advanceAnim(dt * 1000);
+    drawField(ctx, game, anim && buildAnimFrame());
+  } else {
+    drawField(ctx, game);
+  }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
