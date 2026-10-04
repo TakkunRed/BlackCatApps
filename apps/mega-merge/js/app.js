@@ -20,6 +20,9 @@ const bestVal = document.getElementById('bestVal');
 const shotsVal = document.getElementById('shotsVal');
 const btnPause = document.getElementById('btnPause');
 const btnSound = document.getElementById('btnSound');
+const btnInfo = document.getElementById('btnInfo');
+const infoOverlay = document.getElementById('infoOverlay');
+const btnInfoClose = document.getElementById('btnInfoClose');
 const sizeButtons = Array.from(document.querySelectorAll('.size-btn'));
 
 let audioCtx = null;
@@ -370,6 +373,13 @@ btnPause.addEventListener('click', () => { game.togglePause(); });
 btnSound.addEventListener('click', () => {
   game.toggleSound();
   btnSound.textContent = game.soundOn ? '♪ SOUND' : '♪ MUTE';
+});
+
+// --- 遊び方ダイアログ: 常時表示の説明文の代わりに、タップしたときだけ開く ---
+btnInfo.addEventListener('click', () => { infoOverlay.classList.remove('hidden'); });
+btnInfoClose.addEventListener('click', () => { infoOverlay.classList.add('hidden'); });
+infoOverlay.addEventListener('click', (e) => {
+  if (e.target === infoOverlay) infoOverlay.classList.add('hidden'); // 背景タップでも閉じる
 });
 
 // --- 盤面サイズの選択: 4×4 / 5×5 / 6×6。サイズごとに自己ベスト(最小ショット数)を記録する ---

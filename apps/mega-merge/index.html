@@ -52,18 +52,26 @@
       </div>
     </div>
 
-    <p class="hint">消したいブロックを直接タップ/クリック(またはキーボードの数字キー 1〜6)。前後左右で同じ数字が揃うと一気に合体</p>
-
     <div class="secondary-controls">
       <button class="pill-btn" id="btnPause">⏸ PAUSE</button>
       <button class="pill-btn" id="btnSound">♪ SOUND</button>
+      <button class="pill-btn" id="btnInfo">？ 遊び方</button>
     </div>
   </div>
-
-  <p class="credit">
-    MEGA MERGE はオリジナルのパズルです。ブロックを直接タップして2倍にし、上下左右で同じ数字が揃えば一気に合体。盤面を最後の1個になるまで集約しよう(2048を超えても消えません)。弾数制限は無いので、何発使っても必ずクリアできます。目指すのは「自己ベストの更新」、つまりできるだけ少ないショット数でクリアすることです。
-  </p>
 </main>
+
+<div class="info-overlay hidden" id="infoOverlay">
+  <div class="info-dialog">
+    <div class="info-title">MEGA MERGE の遊び方</div>
+    <div class="info-body">
+      <p>消したいブロックを直接タップ/クリック(またはキーボードの数字キー)。狙ったブロックが即座に2倍になる。</p>
+      <p>上下左右で同じ数字が揃うと、1個だけでなく揃った分だけ一気に合体する。合体後の数字がまた隣と一致すれば連鎖する。</p>
+      <p>2048を超えても合体したブロックは消えない。盤面を最後の1個になるまで集約しよう。</p>
+      <p>弾数制限は無いので、何発使っても必ずクリアできる。目指すのは「自己ベストの更新」、つまりできるだけ少ないショット数でクリアすることです。</p>
+    </div>
+    <button class="pill-btn info-close" id="btnInfoClose">とじる</button>
+  </div>
+</div>
 
 <script type="module" src="js/app.js"></script>
 </body>
