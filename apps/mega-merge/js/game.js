@@ -30,6 +30,10 @@
 //      グリッドサイズは setGridSize() でモジュール全体の可変状態として切り替える(ESモジュールの
 //      ライブバインディングにより、他ファイルからの import 先でも常に最新値が見える)。
 //   2) ショット上限はサイズに比例して自動調整する(6×6=130発を基準比率として縮尺)。
+// v6では、「TARGETも残り回数も不要、最小回数を競うゲームにしたい」という要望を受け、
+// ショット数の上限(弾切れでゲームオーバー)とTARGET見積もり(ビームサーチ)を完全に廃止した。
+// 失敗条件が無いかわりに、盤面サイズごとの自己ベスト(最小ショット数)の更新だけが目的になる、
+// 純粋な「最小手数競争」のパズルになった。
 
 export const FIELD_W = 240;
 export const FIELD_H = 280;
@@ -41,7 +45,6 @@ export const CELL_GAP = 2;
 const POP_THRESHOLD = 2048;
 const POP_BONUS = 500;
 const CHAIN_MULT_STEP = 0.5; // 連鎖1回ごとに乗率+0.5
-const SHOT_LIMIT_PER_CELL = 130 / 36; // 6×6=130発で調整した弾数上限を基準にした、1マスあたりの比率
 
 const SEED_VALUES = [2, 2, 2, 4, 4, 8]; // 初期盤面の重み付き候補値
 
@@ -62,9 +65,8 @@ export let GRID_ROWS = 6;
 export let GRID_COLS = 6;
 export let CELL_W = computeCellW(GRID_COLS);
 export let CELL_H = computeCellH(GRID_ROWS);
-export let SHOT_LIMIT = Math.round(GRID_ROWS * GRID_COLS * SHOT_LIMIT_PER_CELL);
 
-// 盤面サイズを切り替える。GRID_ROWS/GRID_COLS/CELL_W/CELL_H/SHOT_LIMIT はESモジュールの
+// 盤面サイズを切り替える。GRID_ROWS/GRID_COLS/CELL_W/CELL_H はESモジュールの
 // ライブバインディングとしてエクスポートされているため、呼び出し後は他ファイルのimport先にも
 // 即座に反映される。新しいゲームを start() する前に呼ぶこと。
 export function setGridSize(rows, cols) {
@@ -72,7 +74,6 @@ export function setGridSize(rows, cols) {
   GRID_COLS = cols;
   CELL_W = computeCellW(cols);
   CELL_H = computeCellH(rows);
-  SHOT_LIMIT = Math.round(rows * cols * SHOT_LIMIT_PER_CELL);
 }
 
 function bestShotsKey(rows, cols) {
@@ -160,20 +161,6 @@ function packColumnsLeft(grid, rows, cols) {
 function frontmostRow(grid, col) {
   for (let row = GRID_ROWS - 1; row >= 0; row--) if (grid[row][col]) return row;
   return -1;
-}
-
-function occupiedColumns(grid) {
-  const cols = [];
-  for (let c = 0; c < GRID_COLS; c++) if (frontmostRow(grid, c) !== -1) cols.push(c);
-  return cols;
-}
-
-// 盤面上の空でないセル全部を列挙する。どのマスでもタップできるため、
-// ソルバーはこの一覧全体を候補として先読みする。
-function occupiedCells(grid) {
-  const cells = [];
-  for (let r = 0; r < GRID_ROWS; r++) for (let c = 0; c < GRID_COLS; c++) if (grid[r][c]) cells.push({ row: r, col: c });
-  return cells;
 }
 
 function countBlocks(grid) {
@@ -279,42 +266,6 @@ function resolveHitPure(grid, row, col) {
   return { chainIndex, finalValue: value, popped, scoreGained, steps, gravityMoves, columnShift };
 }
 
-/**
- * 盤面上の(row,col)マスをタップしたら何が起きるかを試す純粋関数(グリッドのクローンに対して実行)。
- * そのマスが空なら null を返す。ソルバー・何手か先読みしたい用途向け。
- */
-function simulateShot(grid, row, col) {
-  if (!grid[row][col]) return null;
-  const g = grid.map((r) => [...r]);
-  const result = resolveHitPure(g, row, col);
-  return { grid: g, ...result };
-}
-
-/**
- * ビームサーチで「この盤面をクリアするのに必要そうなショット数」の目安を見積もる。
- * どのマスでもタップできる前提で、盤面上の空でない全マスを候補として先読みする。
- * 厳密な最短手数の証明ではなく、強い目安(TARGET)として扱うこと。
- */
-function estimateParShots(initialGrid, { beamWidth = 40, maxDepth = 220 } = {}) {
-  let beam = [{ grid: initialGrid.map((r) => [...r]), shots: 0 }];
-  for (let depth = 0; depth < maxDepth; depth++) {
-    const next = [];
-    for (const state of beam) {
-      for (const cell of occupiedCells(state.grid)) {
-        const result = simulateShot(state.grid, cell.row, cell.col);
-        if (!result) continue;
-        const shots = state.shots + 1;
-        if (countBlocks(result.grid) === 0) return shots;
-        next.push({ grid: result.grid, shots, heuristic: countBlocks(result.grid) });
-      }
-    }
-    if (next.length === 0) return null;
-    next.sort((a, b) => a.heuristic - b.heuristic);
-    beam = next.slice(0, beamWidth);
-  }
-  return null; // maxDepth内にクリア手順が見つからなかった(非常に稀)
-}
-
 class MegaMergeGame {
   constructor(onChange) {
     this.onChange = onChange || (() => {});
@@ -327,7 +278,7 @@ class MegaMergeGame {
 
   reset() {
     this.active = false;
-    this.phase = 'idle'; // idle | ready | playing | paused | cleared | gameOver
+    this.phase = 'idle'; // idle | ready | playing | paused | cleared
     this.score = 0;
     this.shotsUsed = 0;
     this.events = [];
@@ -336,7 +287,6 @@ class MegaMergeGame {
     this.cols = GRID_COLS;
     this.bestShots = getBestShots(this.rows, this.cols);
     this._setupGrid();
-    this.parTarget = estimateParShots(this.grid);
   }
 
   _setupGrid() {
@@ -352,10 +302,6 @@ class MegaMergeGame {
 
   get blockCount() {
     return countBlocks(this.grid);
-  }
-
-  get shotsRemaining() {
-    return Math.max(0, SHOT_LIMIT - this.shotsUsed);
   }
 
   start({ skipReady = false } = {}) {
@@ -414,7 +360,6 @@ class MegaMergeGame {
   // 盤面上の任意のマスをタップ/クリックしたときの唯一の操作。即座に解決する(移動・飛翔時間は無い)。
   shoot(row, col) {
     if (this.phase !== 'playing') return;
-    if (this.shotsUsed >= SHOT_LIMIT) return; // 弾切れ(通常は直前の着弾解決時にgameOverになっている)
     if (!this.grid[row][col]) return; // 空のマス
     this.shotsUsed += 1;
     this.events.push('shoot');
@@ -437,16 +382,8 @@ class MegaMergeGame {
 
     if (this.blockCount === 0) {
       this._cleared();
-    } else {
-      this._checkAmmoOut();
     }
     this._emit();
-  }
-
-  _checkAmmoOut() {
-    if (this.phase === 'playing' && this.shotsUsed >= SHOT_LIMIT) {
-      this._gameOver();
-    }
   }
 
   _cleared() {
@@ -454,12 +391,6 @@ class MegaMergeGame {
     const isNewBest = setBestShotsIfRecord(this.rows, this.cols, this.shotsUsed);
     if (isNewBest) this.bestShots = this.shotsUsed;
     this.events.push(isNewBest ? 'newBest' : 'cleared');
-    this._saveHighScoreIfRecord();
-  }
-
-  _gameOver() {
-    this.phase = 'gameOver';
-    this.events.push('gameOver');
     this._saveHighScoreIfRecord();
   }
 
@@ -478,6 +409,6 @@ class MegaMergeGame {
 
 export {
   MegaMergeGame, POP_THRESHOLD, POP_BONUS,
-  dropColumn, packColumnsLeft, resolveHitPure, simulateShot, estimateParShots,
-  frontmostRow, occupiedColumns, occupiedCells, countBlocks,
+  dropColumn, packColumnsLeft, resolveHitPure,
+  frontmostRow, countBlocks,
 };

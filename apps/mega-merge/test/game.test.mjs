@@ -8,10 +8,10 @@ if (typeof globalThis.localStorage === 'undefined') {
 
 const gameModule = await import('../js/game.js');
 const {
-  MegaMergeGame, GRID_ROWS, GRID_COLS, SHOT_LIMIT,
-  simulateShot, estimateParShots, occupiedCells, setGridSize, getBestShots,
+  MegaMergeGame, GRID_ROWS, GRID_COLS,
+  setGridSize, getBestShots,
 } = gameModule;
-// GRID_ROWS/GRID_COLS/SHOT_LIMIT は setGridSize() で書き換わる値なので、切り替え後は
+// GRID_ROWS/GRID_COLS は setGridSize() で書き換わる値なので、切り替え後は
 // 分割代入した定数(切り替え前のスナップショット)ではなく gameModule.XXX を直接読むこと。
 
 function assert(cond, label) {
@@ -42,8 +42,7 @@ const BOTTOM = GRID_ROWS - 1;
   assert(g.blockCount === GRID_ROWS * GRID_COLS, 'every cell starts occupied');
   const allPow2 = g.grid.flat().every((v) => v > 0 && (v & (v - 1)) === 0);
   assert(allPow2, 'every seeded value is a power of two');
-  assert(g.shotsRemaining === SHOT_LIMIT, 'shotsRemaining starts at the full shot limit');
-  assert(typeof g.parTarget === 'number' && g.parTarget > 0, 'parTarget is computed on a fresh board');
+  assert(g.shotsUsed === 0, 'shotsUsed starts at 0 (there is no shot limit to count down from)');
   g.quit();
 }
 
@@ -100,7 +99,7 @@ const BOTTOM = GRID_ROWS - 1;
   g.quit();
 }
 
-// NEW: 前後左右で同時に複数一致した場合、優先順位で1個だけ選ぶのではなく全部まとめて一気に合体する
+// 前後左右で同時に複数一致した場合、優先順位で1個だけ選ぶのではなく全部まとめて一気に合体する
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
@@ -119,7 +118,7 @@ const BOTTOM = GRID_ROWS - 1;
   g.quit();
 }
 
-// NEW: 横に3つ同じ値が並んでいて真ん中を撃つと、今度は3つとも一気に合体する(以前は2つまでだった)
+// 横に3つ同じ値が並んでいて真ん中を撃つと、3つとも一気に合体する
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
@@ -134,7 +133,7 @@ const BOTTOM = GRID_ROWS - 1;
   g.quit();
 }
 
-// NEW: 十字型(上下左右すべて)が同時に一致すると、4個まとめて一気に合体する
+// 十字型(上下左右すべて)が同時に一致すると、4個まとめて一気に合体する
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
@@ -204,13 +203,12 @@ const BOTTOM = GRID_ROWS - 1;
   g.grid[3][3] = 2;
   g.shoot(3, 3);
   assert(g.shotsUsed === 1, 'shoot() increments shotsUsed');
-  assert(g.shotsRemaining === SHOT_LIMIT - 1, 'shotsRemaining decrements along with shotsUsed');
   assert(g.score === 4, 'shoot() resolves the hit immediately and scores it');
   assert(g.grid[BOTTOM][3] === 4, 'the grid reflects the resolved hit right away');
   g.quit();
 }
 
-// NEW: 盤面上のどのマスでも直接タップできる(列の最前面でなくてもよい)
+// 盤面上のどのマスでも直接タップできる(列の最前面でなくてもよい)
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
@@ -247,53 +245,16 @@ const BOTTOM = GRID_ROWS - 1;
   g.quit();
 }
 
-// shoot(): 弾切れ後は無視される
+// 弾数に上限は無い: shotsUsedがどれだけ大きくても、ショットは拒否されない
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
   g.grid = withAnchors(emptyGrid(), [3]);
   g.grid[3][3] = 2;
-  g.shotsUsed = SHOT_LIMIT;
+  g.shotsUsed = 999999; // かつての弾数上限(サイズに応じて58〜130発程度)をはるかに超える値を手動で設定
   g.shoot(3, 3);
-  assert(g.shotsUsed === SHOT_LIMIT, 'shoot() does not go past the shot limit');
-  assert(g.grid[3][3] === 2, 'the grid is untouched once ammo is exhausted');
-  g.quit();
-}
-
-// 弾数上限に達すると、盤面が残っていてもゲームオーバーになる(shoot()経由の実際の操作で確認)
-{
-  const g = new MegaMergeGame(() => {});
-  g.start({ skipReady: true });
-  g.grid = emptyGrid();
-  // 消費しても盤面が空にならないよう、隣同士が一致しない値をばらけさせて置く
-  for (let c = 0; c < GRID_COLS; c++) g.grid[BOTTOM][c] = 2 << c; // 2,4,8,16,32,64
-  g.shotsUsed = SHOT_LIMIT - 1; // 次の1発でちょうど上限に到達する
-  g.shoot(BOTTOM, 0);
-  assert(g.shotsUsed === SHOT_LIMIT, 'shoot() increments shotsUsed up to the limit');
-  assert(g.phase === 'gameOver', 'running out of shots with blocks remaining ends the game');
-  g.quit();
-}
-
-// _checkAmmoOut() 自体の単体確認(盤面が空でなければgameOverになる)
-{
-  const g = new MegaMergeGame(() => {});
-  g.start({ skipReady: true });
-  g.shotsUsed = SHOT_LIMIT;
-  g._checkAmmoOut();
-  assert(g.phase === 'gameOver', '_checkAmmoOut() ends the game once shotsUsed reaches the limit');
-  g.quit();
-}
-
-// ゲームオーバーでも、その時点のスコアが新記録なら最高得点が更新される
-{
-  localStorage.setItem('megaMerge.highScore', '0');
-  const g = new MegaMergeGame(() => {});
-  g.start({ skipReady: true });
-  g.score = 321;
-  g.shotsUsed = SHOT_LIMIT;
-  g._checkAmmoOut();
-  assert(g.phase === 'gameOver', 'sanity: the game is over');
-  assert(g.highScore === 321, 'a game-over run still counts toward the high score if it is a new record');
+  assert(g.shotsUsed === 1000000, 'shoot() keeps incrementing shotsUsed with no ceiling check');
+  assert(g.phase === 'playing', 'there is no ammo-out game over; a huge shotsUsed does not end the game');
   g.quit();
 }
 
@@ -408,54 +369,10 @@ const BOTTOM = GRID_ROWS - 1;
   g1.quit();
 }
 
-// occupiedCells(): 盤面上の空でない全マスを列挙する
-{
-  const grid = emptyGrid();
-  grid[0][0] = 2;
-  grid[5][5] = 4;
-  const cells = occupiedCells(grid);
-  assert(cells.length === 2, 'occupiedCells lists every non-empty cell');
-  assert(cells.some((c) => c.row === 0 && c.col === 0) && cells.some((c) => c.row === 5 && c.col === 5), 'occupiedCells reports the correct coordinates');
-}
-
-// simulateShot(row, col): 純粋関数で、元のgridを変更しない
-{
-  const base = emptyGrid();
-  base[3][3] = 2;
-  const result = simulateShot(base, 3, 3);
-  assert(result.finalValue === 4, 'simulateShot resolves the hit on a cloned grid');
-  assert(base[3][3] === 2, 'simulateShot does not mutate the grid passed in');
-  // 盤面には他に何も無いため、水平圧縮で列3の内容は左詰めの列0に移る。
-  assert(result.grid[BOTTOM][0] === 4, 'the returned grid reflects the resolved hit, repacked to the left');
-}
-
-// simulateShot(): 空のマスはnullを返す
-{
-  assert(simulateShot(emptyGrid(), 3, 0) === null, 'simulateShot on an empty cell returns null');
-}
-
-// estimateParShots(): 孤立した1マスは、2048に到達するまで同じマスを撃ち続けるしかない(2→4→…→2048は10発)
-{
-  const grid = emptyGrid();
-  grid[BOTTOM][0] = 2;
-  assert(estimateParShots(grid) === 10, 'a single isolated block needs exactly 10 doublings to pop (got a different value)');
-}
-
-// estimateParShots(): 実際にランダム生成された盤面でも、高速かつ妥当な値を返す
-{
-  const g = new MegaMergeGame(() => {});
-  g.start({ skipReady: true });
-  const recomputed = estimateParShots(g.grid.map((r) => [...r]));
-  assert(g.parTarget === recomputed, 'reset() stores the same par estimate that estimateParShots computes directly');
-  assert(g.parTarget < SHOT_LIMIT, 'the par estimate for a typical board is comfortably under the shot limit');
-  g.quit();
-}
-
-// setGridSize(): 盤面サイズを切り替えると、GRID_ROWS/GRID_COLS/SHOT_LIMIT/CELL_W/CELL_H が追従する
+// setGridSize(): 盤面サイズを切り替えると、GRID_ROWS/GRID_COLS/CELL_W/CELL_H が追従する
 {
   setGridSize(4, 4);
   assert(gameModule.GRID_ROWS === 4 && gameModule.GRID_COLS === 4, 'setGridSize updates GRID_ROWS/GRID_COLS');
-  assert(gameModule.SHOT_LIMIT < SHOT_LIMIT, 'a smaller board gets a proportionally smaller shot limit than the 6x6 default');
   assert(gameModule.CELL_W > 40, 'a 4x4 board gets noticeably bigger cells than the 6x6 default (~35.7px)');
 
   const g = new MegaMergeGame(() => {});

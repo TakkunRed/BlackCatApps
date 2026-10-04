@@ -1,6 +1,6 @@
 import {
   MegaMergeGame, FIELD_W, FIELD_H, GRID_ROWS, GRID_COLS, GRID_MARGIN_X, GRID_TOP_Y, CELL_W, CELL_H, CELL_GAP,
-  SHOT_LIMIT, dropColumn, packColumnsLeft, cellX, cellY, frontmostRow, setGridSize, getBestShots,
+  dropColumn, packColumnsLeft, cellX, cellY, frontmostRow, setGridSize, getBestShots,
 } from './game.js';
 import { drawField } from './render.js';
 
@@ -16,7 +16,7 @@ const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlayTitle');
 const overlaySub = document.getElementById('overlaySub');
 const scoreVal = document.getElementById('scoreVal');
-const targetVal = document.getElementById('targetVal');
+const bestVal = document.getElementById('bestVal');
 const shotsVal = document.getElementById('shotsVal');
 const btnPause = document.getElementById('btnPause');
 const btnSound = document.getElementById('btnSound');
@@ -39,27 +39,43 @@ function beep(freq, durationMs, type = 'square', gainVal = 0.05) {
   } catch (_) { /* no-op */ }
 }
 
-function playEvents(events, g) {
-  for (const ev of events) {
-    if (ev === 'shoot') beep(500, 40, 'square', 0.03);
-    else if (ev === 'hit') beep(320, 60, 'square', 0.04);
-    else if (ev === 'merge') {
-      const chain = g.lastResolve ? g.lastResolve.chainIndex : 1;
-      beep(440 + chain * 120, 90, 'sawtooth', 0.06);
-    } else if (ev === 'pop') beep(1000, 220, 'triangle', 0.08);
-    else if (ev === 'cleared') beep(700, 500, 'triangle', 0.07);
-    else if (ev === 'newBest') { beep(700, 300, 'triangle', 0.07); beep(1050, 400, 'triangle', 0.08); }
-    else if (ev === 'gameOver') beep(90, 600, 'sawtooth', 0.08);
+// 「連続合体したのか分からない」対策として、hit/merge/pop の効果音は即座に鳴らすのではなく、
+// アニメーションの各段階が実際に画面に現れたタイミングに同期させる(playStageSound参照)。
+// ここでは操作そのもののフィードバック(shoot)だけを即座に鳴らす。
+function playImmediateEvents(events) {
+  if (events.includes('shoot')) beep(500, 40, 'square', 0.03);
+}
+
+// 合体アニメーションの各段階が始まるタイミングで鳴らす効果音。連鎖が深いほど・同時吸収が
+// 多いほど音程と音量を上げ、「何連鎖したか」を耳でも感じられるようにする。
+function playStageSound(stage) {
+  if (!stage) return;
+  if (stage.kind === 'hit') {
+    beep(320, 60, 'square', 0.04);
+  } else if (stage.kind === 'merge') {
+    const depth = (stage.chainStep || 1) + (stage.from.length - 1);
+    beep(420 + depth * 130, 90, 'sawtooth', Math.min(0.095, 0.05 + depth * 0.009));
+  } else if (stage.kind === 'pop') {
+    beep(1000, 220, 'triangle', 0.08);
+  }
+}
+
+// 最小回数を更新した瞬間はもっと派手に: 上昇アルペジオ+紙吹雪。通常クリアは控えめな単音のみ。
+function playCelebration(kind) {
+  if (kind === 'newBest') {
+    beep(700, 200, 'triangle', 0.07);
+    setTimeout(() => beep(950, 200, 'triangle', 0.08), 130);
+    setTimeout(() => beep(1300, 420, 'triangle', 0.09), 260);
+    spawnConfetti();
+  } else if (kind === 'cleared') {
+    beep(700, 450, 'triangle', 0.07);
   }
 }
 
 function updateHud() {
   scoreVal.textContent = String(game.score);
-  targetVal.textContent = game.parTarget != null ? String(game.parTarget) : '--';
-  shotsVal.textContent = `${game.shotsUsed}/${SHOT_LIMIT}`;
-  const overTarget = game.parTarget != null && game.shotsUsed > game.parTarget;
-  shotsVal.classList.toggle('over-target', overTarget);
-  shotsVal.classList.toggle('danger', game.shotsRemaining <= Math.round(SHOT_LIMIT * 0.15));
+  bestVal.textContent = game.bestShots != null ? String(game.bestShots) : '--';
+  shotsVal.textContent = String(game.shotsUsed);
 }
 
 function refreshSizeButtons() {
@@ -77,53 +93,68 @@ const OVERLAY_TEXT = {
   ready: ['GET READY', ''],
   paused: ['PAUSE', 'タップで再開'],
   cleared: ['ALL CLEAR!', ''],
-  gameOver: ['OUT OF AMMO', 'タップしてもう一度'],
 };
+
+// クリア時に自己ベストを更新したかどうか。game.eventsはonChangeの呼び出し後にクリアされてしまうため、
+// アニメーション終了後まで遅延してオーバーレイ/演出を出す都合上、ここに控えておく。
+let lastClearWasNewBest = false;
 
 function updateOverlay() {
   if (game.phase === 'playing') {
     overlay.classList.add('hidden');
+    overlayTitle.classList.remove('celebrate');
     return;
   }
   overlay.classList.remove('hidden');
   const [title, sub] = OVERLAY_TEXT[game.phase] || OVERLAY_TEXT.idle;
-  const isNewBest = game.events && game.events.includes('newBest');
-  overlayTitle.textContent = game.phase === 'ready'
-    ? `HI-SCORE ${game.highScore}`
-    : (game.phase === 'cleared' && isNewBest ? 'NEW BEST!!' : title);
+  const isNewBest = game.phase === 'cleared' && lastClearWasNewBest;
+  overlayTitle.textContent = game.phase === 'ready' ? `HI-SCORE ${game.highScore}` : (isNewBest ? 'NEW BEST!!' : title);
+  overlayTitle.classList.toggle('celebrate', isNewBest);
   if (game.phase === 'cleared') {
-    const beat = game.parTarget != null && game.shotsUsed <= game.parTarget;
-    const diff = game.parTarget != null ? Math.abs(game.shotsUsed - game.parTarget) : null;
-    const line2 = game.parTarget == null
-      ? ''
-      : beat
-        ? `TARGET ${game.parTarget}発 達成!(${diff}発の余裕)`
-        : `TARGET ${game.parTarget}発(あと${diff}発及ばず)`;
-    const line3 = `${game.rows}×${game.cols} 自己ベスト: ${game.bestShots}発${isNewBest ? ' (更新!)' : ''}`;
-    overlaySub.textContent = `SCORE ${game.score}  (${game.shotsUsed}発使用)\n${line2}\n${line3}\nタップしてもう一度`;
-  } else if (game.phase === 'gameOver') {
-    overlaySub.textContent = `SCORE ${game.score}  (${game.shotsUsed}発使用)\nタップしてもう一度`;
+    const line2 = `${game.rows}×${game.cols} 自己ベスト: ${game.bestShots}発${isNewBest ? ' (更新!)' : ''}`;
+    overlaySub.textContent = `SCORE ${game.score}  (${game.shotsUsed}発使用)\n${line2}\nタップしてもう一度`;
   } else {
     overlaySub.textContent = sub;
   }
 }
 
+// クリアした瞬間に鳴らす祝福音/紙吹雪は、まだ再生中の合体アニメーションの後に回したいので、
+// いったんここに控えておき、アニメーションが終わった時点(finishAnimation)で消費する。
+let pendingCelebration = null;
+
 function onChange(g) {
   updateHud();
-  updateOverlay();
   refreshSizeButtons();
-  if (g.events && g.events.length) playEvents(g.events, g);
 
-  if (g.lastResolve && g.lastResolve !== lastSeenResolve) {
+  if (g.events && g.events.includes('shoot')) playImmediateEvents(g.events);
+  if (g.events && g.events.includes('newBest')) { pendingCelebration = 'newBest'; lastClearWasNewBest = true; }
+  else if (g.events && g.events.includes('cleared')) { pendingCelebration = 'cleared'; lastClearWasNewBest = false; }
+
+  const isNewResolve = g.lastResolve && g.lastResolve !== lastSeenResolve;
+  if (isNewResolve) {
     lastSeenResolve = g.lastResolve;
     startAnimation(g);
-  } else if (!anim) {
+  }
+
+  // クリア演出中(アニメーション再生中)はオーバーレイをまだ出さない。
+  // それ以外のフェーズ変化(idle/ready/paused/playing、またはアニメーションが発生しなかった場合)は即座に反映する。
+  if (!(g.phase === 'cleared' && anim)) {
+    updateOverlay();
+    if (isNewResolve && !anim && pendingCelebration) {
+      const kind = pendingCelebration;
+      pendingCelebration = null;
+      playCelebration(kind);
+    }
+  }
+
+  if (!isNewResolve && !anim) {
     restGrid = cloneGrid(g.grid);
   }
 }
 
 function tryAdvance() {
-  if (!game.active || game.phase === 'cleared' || game.phase === 'gameOver') { game.start(); return true; }
+  if (anim) return false; // アニメーション再生中(クリア演出含む)はタップでの先送りを無視する
+  if (!game.active || game.phase === 'cleared') { game.start(); return true; }
   if (game.phase === 'paused') { game.resume(); return true; }
   return false;
 }
@@ -172,6 +203,7 @@ function startAnimation(g) {
   if (!stages.length || !restGrid) return;
 
   anim = { stages, index: 0, t: 0, grid: cloneGrid(restGrid) };
+  playStageSound(stages[0]);
 }
 
 // 1段階が完了した時点のグリッドを確定させる(見た目の「結果」を次の段階の出発点にする)
@@ -200,8 +232,22 @@ function advanceAnim(dtMs) {
   anim.index += 1;
   anim.t = 0;
   if (anim.index >= anim.stages.length) {
-    restGrid = cloneGrid(game.grid);
-    anim = null;
+    finishAnimation();
+  } else {
+    playStageSound(anim.stages[anim.index]);
+  }
+}
+
+// アニメーションの全段階が終わったときの後始末。クリア演出(オーバーレイ表示・祝福音・紙吹雪)は
+// ここまで遅らせることで、合体の様子をしっかり見せてから「ALL CLEAR」「NEW BEST」が出るようにする。
+function finishAnimation() {
+  restGrid = cloneGrid(game.grid);
+  anim = null;
+  updateOverlay();
+  if (pendingCelebration) {
+    const kind = pendingCelebration;
+    pendingCelebration = null;
+    playCelebration(kind);
   }
 }
 
@@ -362,6 +408,55 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'p' || e.key === 'P') { game.togglePause(); return; }
 });
 
+// --- 自己ベスト更新時の紙吹雪(「もっと派手に」という要望への対応) ---
+// Canvas上に直接パーティクルを吹き上げるだけの、ゲーム状態には一切影響しない純粋な演出。
+let confetti = null;
+const CONFETTI_COLORS = ['#ffd34d', '#ff6b6b', '#4dd9ff', '#7cff8a', '#c792ff'];
+const CONFETTI_LIFE_S = 1.6;
+const CONFETTI_GRAVITY = 260;
+
+function spawnConfetti() {
+  const particles = [];
+  const originX = FIELD_W / 2;
+  const originY = FIELD_H * 0.38;
+  for (let i = 0; i < 40; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 70 + Math.random() * 130;
+    particles.push({
+      x: originX, y: originY,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 60, // 少し上向きに吹き上げる
+      size: 3 + Math.random() * 3.5,
+      color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+      rotation: Math.random() * Math.PI,
+      rotSpeed: (Math.random() - 0.5) * 9,
+    });
+  }
+  confetti = { particles, elapsed: 0 };
+}
+
+function updateAndDrawConfetti(dt) {
+  if (!confetti) return;
+  confetti.elapsed += dt;
+  if (confetti.elapsed >= CONFETTI_LIFE_S) { confetti = null; return; }
+  const life = Math.max(0, 1 - confetti.elapsed / CONFETTI_LIFE_S);
+  ctx.save();
+  for (const p of confetti.particles) {
+    p.vy += CONFETTI_GRAVITY * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.rotation += p.rotSpeed * dt;
+    ctx.save();
+    ctx.globalAlpha = life;
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.rotation);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 1.6);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 // --- 描画ループ(入力に対する即時解決なので、常時のゲームロジック更新は不要) ---
 let lastT = null;
 function loop(t) {
@@ -375,6 +470,7 @@ function loop(t) {
   } else {
     drawField(ctx, game, null, hoverCell);
   }
+  if (confetti) updateAndDrawConfetti(dt);
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
