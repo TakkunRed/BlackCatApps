@@ -1,7 +1,8 @@
 // MEGA MERGE - ロジック本体(描画・DOM非依存、update(dt)で駆動する純粋なゲームステート)
 // オリジナルのパズル。ブロック崩しのように並んだ「2の累乗」ブロックを列ごとにタップして倍にし、
 // 上下左右の隣接ブロックと同じ数字なら合体してさらに倍になる。
-// 合体の連鎖が長いほど得点ボーナスが大きくなる。2048に到達したブロックはポップして消滅する。
+// 合体の連鎖が長いほど得点ボーナスが大きくなる。盤面のブロックを合体させ続け、最後の1個に
+// なるまでの最小ショット数を競う。
 //
 // v1(降下なし・弾数無制限)は「同じマスを撃ち続ければ必ず勝てる」ため、
 // プレイヤーの選択がほぼ結果に影響しないことがシミュレーションで判明した。
@@ -34,6 +35,11 @@
 // ショット数の上限(弾切れでゲームオーバー)とTARGET見積もり(ビームサーチ)を完全に廃止した。
 // 失敗条件が無いかわりに、盤面サイズごとの自己ベスト(最小ショット数)の更新だけが目的になる、
 // 純粋な「最小手数競争」のパズルになった。
+// v7では、「2048にならないと消えないというのをやめて、最後の1個にするところまでの最小回数を
+// 競うゲームにしたい」という要望を受け、2048到達でポップして消滅する仕組みを完全に廃止した。
+// 合体した側のブロックは値がいくつになっても消えずに残り続け、盤面のブロックを合体させ続けて
+// 最後の1個になった時点でクリアとする(blockCount===1が達成条件。ポップが無いのでhitしたマス
+// 自身が消えることはもう無く、盤面が0個になることも無い)。
 
 export const FIELD_W = 240;
 export const FIELD_H = 280;
@@ -42,8 +48,6 @@ export const GRID_MARGIN_X = 8;
 export const GRID_TOP_Y = 18;
 export const CELL_GAP = 2;
 
-const POP_THRESHOLD = 2048;
-const POP_BONUS = 500;
 const CHAIN_MULT_STEP = 0.5; // 連鎖1回ごとに乗率+0.5
 
 const SEED_VALUES = [2, 2, 2, 4, 4, 8]; // 初期盤面の重み付き候補値
@@ -175,7 +179,9 @@ function multiplierForChain(chainIndex) {
 
 /**
  * 1マスへの着弾(直撃)を解決する純粋関数。渡されたgridを直接書き換え、
- * 何が起きたかの詳細(steps)・連鎖回数(合計吸収数)・最終値・ポップしたか・得点を返す。
+ * 何が起きたかの詳細(steps)・連鎖回数(合計吸収数)・最終値・得点を返す。
+ * 合体したブロックは値がいくつになっても消えない(ポップは廃止)。撃たれたマス自身は
+ * 常に盤面に残り続け、吸収された隣接ブロックだけが取り除かれる。
  * 連鎖判定は「直撃前の元の値」と「直撃後に倍になった値」の両方を順に試す:
  *   例: 隣が自分と同じ値(元の値)なら、まずそれと合体してから2倍になる。
  *   その後は(今までと同じく)倍になった値と一致する隣接ブロックを探し続ける。
@@ -242,15 +248,7 @@ function resolveHitPure(grid, row, col) {
   }
 
   const chainIndex = chainCount;
-  let popped = false;
-  if (value >= POP_THRESHOLD) {
-    grid[row][col] = 0;
-    scoreGained += POP_BONUS;
-    popped = true;
-    steps.push({ type: 'pop', row, col, value });
-  } else {
-    grid[row][col] = value;
-  }
+  grid[row][col] = value; // ポップは無いので、撃たれたマス自身は常に残る
 
   const gravityMoves = {};
   for (const c of touchedCols) {
@@ -263,7 +261,7 @@ function resolveHitPure(grid, row, col) {
     for (let r = 0; r < GRID_ROWS; r++) for (let c = 0; c < GRID_COLS; c++) grid[r][c] = packed[r][c];
   }
 
-  return { chainIndex, finalValue: value, popped, scoreGained, steps, gravityMoves, columnShift };
+  return { chainIndex, finalValue: value, scoreGained, steps, gravityMoves, columnShift };
 }
 
 class MegaMergeGame {
@@ -371,21 +369,21 @@ class MegaMergeGame {
 
     this.score += result.scoreGained;
     this.events.push(result.chainIndex > 0 ? 'merge' : 'hit');
-    if (result.popped) this.events.push('pop');
     this.lastResolve = {
       row, col, finalValue: result.finalValue, chainIndex: result.chainIndex,
-      scoreGained: result.scoreGained, popped: result.popped,
+      scoreGained: result.scoreGained,
     };
     this.lastResolveSteps = result.steps;
     this.lastGravityMoves = result.gravityMoves;
     this.lastColumnShift = result.columnShift;
 
-    if (this.blockCount === 0) {
+    if (this.blockCount === 1) {
       this._cleared();
     }
     this._emit();
   }
 
+  // 盤面のブロックが最後の1個になった(=これ以上合体しようがない状態)ときに呼ばれる。
   _cleared() {
     this.phase = 'cleared';
     const isNewBest = setBestShotsIfRecord(this.rows, this.cols, this.shotsUsed);
@@ -408,7 +406,7 @@ class MegaMergeGame {
 }
 
 export {
-  MegaMergeGame, POP_THRESHOLD, POP_BONUS,
+  MegaMergeGame,
   dropColumn, packColumnsLeft, resolveHitPure,
   frontmostRow, countBlocks,
 };

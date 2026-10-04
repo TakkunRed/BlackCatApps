@@ -168,30 +168,30 @@ const BOTTOM = GRID_ROWS - 1;
   g.quit();
 }
 
-// 2048到達でポップして消滅し、ボーナス得点が入る
+// 2048に到達しても消滅しない(ポップは廃止): 合体した側のブロックはそのまま盤面に残る
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
-  g.grid = emptyGrid();
+  g.grid = withAnchors(emptyGrid(), [3]);
   g.grid[3][3] = 512;  // 撃つと1024になる
-  g.grid[2][3] = 1024; // 合体すると2048に到達してポップ
-  const before = g.score;
+  g.grid[2][3] = 1024; // 合体すると2048に到達するが、消えずに2048のまま残る
   g._resolveHit(3, 3);
-  assert(g.blockCount === 0, 'both participating cells are gone once the merge reaches the pop threshold');
-  assert(g.score >= before + 500, 'popping awards the pop bonus on top of the merge score');
-  assert(g.lastResolve.popped === true, 'lastResolve reports popped: true');
+  assert(g.grid[BOTTOM][3] === 2048, 'the surviving block shows the full merged value, uncapped');
+  assert(g.lastResolveSteps.every((s) => s.type !== 'pop'), 'no pop step is ever recorded any more');
   g.quit();
 }
 
-// 盤面が空になるとクリア
+// 盤面のブロックが最後の1個になるとクリア(2048到達は無関係)
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
   g.grid = emptyGrid();
-  g.grid[0][0] = 1024; // 撃つと2048になり、単独でポップする(盤面唯一のブロック)
-  g._resolveHit(0, 0);
-  assert(g.blockCount === 0, 'the board is empty after the final pop');
-  assert(g.phase === 'cleared', 'clearing the whole board moves to the cleared phase');
+  g.grid[3][3] = 2;
+  g.grid[2][3] = 2; // 隣接する同値ブロック。合体すると盤面に残るのはこの1個だけになる
+  g._resolveHit(3, 3);
+  assert(g.blockCount === 1, 'merging the only two blocks on the board leaves exactly one');
+  assert(g.grid.flat().includes(4), 'the final surviving value is unrelated to 2048 - merely small here');
+  assert(g.phase === 'cleared', 'reaching exactly one block moves to the cleared phase');
   g.quit();
 }
 
@@ -276,25 +276,28 @@ const BOTTOM = GRID_ROWS - 1;
   g.quit();
 }
 
-// 水平圧縮: 列が完全に空になると、右側の列が左へ詰める
+// 水平圧縮: 合体で吸収された側の列が完全に空になると、右側の列が左へ詰める
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
   g.grid = emptyGrid();
-  g.grid[BOTTOM][1] = 1024; // 撃つ列(1)。これ1個だけなので、ポップすると列1は完全に空になる
-  g.grid[BOTTOM][3] = 9;    // 列3の目印(値は合体に影響しない適当な数)
+  g.grid[BOTTOM][1] = 1024; // 撃つマス(列1)
+  g.grid[BOTTOM][2] = 1024; // 右隣: 直撃前の値(1024)と一致するので吸収される → 列2が空になる
+  g.grid[BOTTOM][4] = 9;    // 列4の目印(値は合体に影響しない適当な数)
   g.grid[BOTTOM][5] = 16;   // 列5の目印
-  g._resolveHit(BOTTOM, 1); // 1024→2048でポップ。列1が完全に空になる
-  assert(g.lastResolve.popped === true, 'sanity: the hit block popped');
-  assert(g.blockCount === 2, 'two marker blocks remain after column 1 pops empty');
+  g._resolveHit(BOTTOM, 1); // 1024+1024→2048(ポップはしない)。列2が完全に空になる
+  assert(g.lastResolve.chainIndex === 1, 'sanity: the neighbor at column 2 was absorbed');
+  assert(g.blockCount === 3, 'the merged block plus two untouched markers remain (3 total, not 2)');
   // 圧縮は「空いた列の隣だけ」ではなく、盤面全体を常に隙間なく左詰めし続ける。
-  // 残っているのは列3・列5の中身だけなので、左から順に列0・列1に詰まる。
-  assert(g.grid[BOTTOM][0] === 9, 'the marker that was in column 3 repacks to column 0');
-  assert(g.grid[BOTTOM][1] === 16, 'the marker that was in column 5 repacks to column 1');
+  // 残っているのは列1(合体結果)・列4・列5の中身なので、左から順に列0・列1・列2に詰まる。
+  assert(g.grid[BOTTOM][0] === 2048, 'the merged result (originally column 1) repacks to column 0');
+  assert(g.grid[BOTTOM][1] === 9, 'the marker that was in column 4 repacks to column 1');
+  assert(g.grid[BOTTOM][2] === 16, 'the marker that was in column 5 repacks to column 2');
   assert(
-    g.lastColumnShift.some((s) => s.fromCol === 3 && s.toCol === 0) &&
-    g.lastColumnShift.some((s) => s.fromCol === 5 && s.toCol === 1),
-    'lastColumnShift records both column moves for animation'
+    g.lastColumnShift.some((s) => s.fromCol === 1 && s.toCol === 0) &&
+    g.lastColumnShift.some((s) => s.fromCol === 4 && s.toCol === 1) &&
+    g.lastColumnShift.some((s) => s.fromCol === 5 && s.toCol === 2),
+    'lastColumnShift records all three column moves for animation'
   );
   g.quit();
 }
@@ -340,16 +343,17 @@ const BOTTOM = GRID_ROWS - 1;
   g.quit();
 }
 
-// ポップ時もステップに記録される
+// 2048を超えてさらに連鎖しても、ポップせず普通の合体として記録され続ける
 {
   const g = new MegaMergeGame(() => {});
   g.start({ skipReady: true });
   g.grid = withAnchors(emptyGrid(), [3]);
   g.grid[3][3] = 1024;
-  g.grid[2][3] = 1024; // 合体して2048に到達、ポップ
+  g.grid[2][3] = 1024; // 合体して2048に到達するが、消えずにそのまま連鎖対象になりうる
   g._resolveHit(3, 3);
   const last = g.lastResolveSteps[g.lastResolveSteps.length - 1];
-  assert(last.type === 'pop' && last.value === 2048, 'the final step records the pop at 2048');
+  assert(last.type === 'merge' && last.value === 2048, 'the step crossing 2048 is recorded as an ordinary merge, not a pop');
+  assert(g.grid[BOTTOM][3] === 2048, 'the block survives at 2048 instead of disappearing');
   g.quit();
 }
 
@@ -404,15 +408,19 @@ const BOTTOM = GRID_ROWS - 1;
 // 自己ベストは「それより少ない」場合だけ更新され、同数や悪化では更新されない
 {
   setGridSize(4, 4); // 前のテストで 4x4 の自己ベストは 1 になっている
+  const BOTTOM4 = 3;
   let captured = null;
   const g = new MegaMergeGame((inst) => { captured = [...inst.events]; });
   g.start({ skipReady: true });
   g.grid = Array.from({ length: 4 }, () => Array(4).fill(0));
-  g.grid[0][0] = 1024;
-  g.grid[3][3] = 1024; // 対角の離れた位置に置き、隣接しないので合体せず2発必要になるようにする
-  g.shoot(0, 0); // 1発目: 単独直撃で2048に到達しポップ。列0が空になるので水平圧縮が起き、
-  // 列3にあったもう一方のブロックは列0へ詰め直される(行は3のまま)。
-  g.shoot(3, 0); // 2発目: 詰め直された残る唯一のブロックを直撃、2048に到達しポップして盤面が空になる
+  g.grid[0][0] = 2;
+  g.grid[0][1] = 2; // 隣接する同値ブロック(1発目でこの2つが合体して1個になる)
+  g.grid[3][3] = 4; // 離れた3つ目のブロック(1発目では合体に関与しない)
+  g.shoot(0, 0); // 1発目: 右隣(0,1)の2と合体して4になる。重力・水平圧縮により
+  // 列0(合体結果の4)・列1(元は列3にあった4)が、ともに最下段に並ぶ。
+  assert(g.blockCount === 2, 'sanity: after the first shot, two blocks remain (not yet down to one)');
+  assert(g.grid[BOTTOM4][0] === 4 && g.grid[BOTTOM4][1] === 4, 'sanity: both survivors land adjacent at the bottom row');
+  g.shoot(BOTTOM4, 0); // 2発目: 隣の4と合体して8になり、盤面に残るのは1個だけになる
   assert(g.phase === 'cleared', 'sanity: this setup clears in exactly 2 shots');
   assert(getBestShots(4, 4) === 1, 'a worse (2-shot) clear does not overwrite the existing 1-shot best');
   assert(!captured.includes('newBest'), 'no newBest event fires when the result does not beat the record');

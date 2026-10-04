@@ -76,12 +76,12 @@ body {
 .size-btn:active { background: var(--key-bg-active); }
 
 .size-label {
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 700;
 }
 
 .size-best {
-  font-size: 8px;
+  font-size: 11px;
   letter-spacing: 0.04em;
   color: var(--violet-dim);
 }
@@ -104,13 +104,13 @@ body {
 .hud-block:last-child { align-items: flex-end; }
 
 .hud-label {
-  font-size: 8px;
+  font-size: 11px;
   letter-spacing: 0.1em;
   color: var(--violet-dim);
 }
 
 .hud-val {
-  font-size: 16px;
+  font-size: 21px;
   font-weight: 700;
   color: var(--violet);
   text-shadow: 0 0 6px rgba(167, 139, 250, 0.5);
@@ -157,7 +157,7 @@ body {
 }
 
 .overlay-title {
-  font-size: 15px;
+  font-size: 21px;
   font-weight: 700;
   letter-spacing: 0.06em;
   color: var(--violet);
@@ -183,7 +183,7 @@ body {
 }
 
 .overlay-sub {
-  font-size: 10.5px;
+  font-size: 13px;
   color: var(--white);
   opacity: 0.85;
   line-height: 1.6;
@@ -193,7 +193,7 @@ body {
 .hint {
   max-width: 300px;
   text-align: center;
-  font-size: 10px;
+  font-size: 12.5px;
   line-height: 1.5;
   color: #7c828a;
   margin: 10px 0 0;
@@ -211,9 +211,9 @@ body {
   border-radius: 999px;
   background: var(--key-bg);
   color: var(--white);
-  font-size: 10px;
+  font-size: 13px;
   letter-spacing: 0.05em;
-  padding: 7px 14px;
+  padding: 8px 16px;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
@@ -222,7 +222,7 @@ body {
 .credit {
   max-width: 320px;
   text-align: center;
-  font-size: 10.5px;
+  font-size: 12.5px;
   line-height: 1.6;
   color: #7c828a;
   padding: 0 8px;

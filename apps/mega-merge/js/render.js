@@ -64,8 +64,12 @@ function drawBlock(ctx, x, y, value, { scale = 1, alpha = 1, flash = 0 } = {}) {
   }
 
   ctx.fillStyle = value >= 512 ? COLORS.textLight : COLORS.textDark;
-  const fontScale = value >= 1000 ? 0.30 : 0.40;
-  const fontSize = Math.max(9, Math.floor(CELL_W * fontScale));
+  // ポップ廃止で値の桁数に上限が無くなったため、固定の桁数区分ではなく実際の桁数から
+  // 「このセル幅に収まる最大サイズ」を逆算する(何桁になっても枠からはみ出さないように)。
+  const digits = String(value).length;
+  const maxTextWidth = w * 0.86;
+  const fitSize = Math.floor(maxTextWidth / (digits * 0.58));
+  const fontSize = Math.max(7, Math.min(fitSize, Math.floor(CELL_W * 0.46)));
   ctx.font = `bold ${fontSize}px "SFMono-Regular", Consolas, monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -80,7 +84,7 @@ function drawChainLabel(ctx, label) {
   ctx.globalAlpha = label.alpha;
   ctx.translate(label.x, label.y);
   ctx.scale(label.scale, label.scale);
-  const fontSize = Math.max(11, Math.floor(CELL_W * 0.34));
+  const fontSize = Math.max(13, Math.floor(CELL_W * 0.4));
   ctx.font = `bold ${fontSize}px "SFMono-Regular", Consolas, monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';

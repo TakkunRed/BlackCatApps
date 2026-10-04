@@ -39,7 +39,7 @@ function beep(freq, durationMs, type = 'square', gainVal = 0.05) {
   } catch (_) { /* no-op */ }
 }
 
-// 「連続合体したのか分からない」対策として、hit/merge/pop の効果音は即座に鳴らすのではなく、
+// 「連続合体したのか分からない」対策として、hit/merge の効果音は即座に鳴らすのではなく、
 // アニメーションの各段階が実際に画面に現れたタイミングに同期させる(playStageSound参照)。
 // ここでは操作そのもののフィードバック(shoot)だけを即座に鳴らす。
 function playImmediateEvents(events) {
@@ -55,8 +55,6 @@ function playStageSound(stage) {
   } else if (stage.kind === 'merge') {
     const depth = (stage.chainStep || 1) + (stage.from.length - 1);
     beep(420 + depth * 130, 90, 'sawtooth', Math.min(0.095, 0.05 + depth * 0.009));
-  } else if (stage.kind === 'pop') {
-    beep(1000, 220, 'triangle', 0.08);
   }
 }
 
@@ -92,7 +90,7 @@ const OVERLAY_TEXT = {
   idle: ['MEGA MERGE', 'タップしてスタート'],
   ready: ['GET READY', ''],
   paused: ['PAUSE', 'タップで再開'],
-  cleared: ['ALL CLEAR!', ''],
+  cleared: ['COMPLETE!', ''],
 };
 
 // クリア時に自己ベストを更新したかどうか。game.eventsはonChangeの呼び出し後にクリアされてしまうため、
@@ -111,8 +109,10 @@ function updateOverlay() {
   overlayTitle.textContent = game.phase === 'ready' ? `HI-SCORE ${game.highScore}` : (isNewBest ? 'NEW BEST!!' : title);
   overlayTitle.classList.toggle('celebrate', isNewBest);
   if (game.phase === 'cleared') {
+    const finalValue = game.lastResolve ? game.lastResolve.finalValue : null;
+    const line1 = finalValue != null ? `最後の1個: ${finalValue}  SCORE ${game.score}  (${game.shotsUsed}発使用)` : `SCORE ${game.score}  (${game.shotsUsed}発使用)`;
     const line2 = `${game.rows}×${game.cols} 自己ベスト: ${game.bestShots}発${isNewBest ? ' (更新!)' : ''}`;
-    overlaySub.textContent = `SCORE ${game.score}  (${game.shotsUsed}発使用)\n${line2}\nタップしてもう一度`;
+    overlaySub.textContent = `${line1}\n${line2}\nタップしてもう一度`;
   } else {
     overlaySub.textContent = sub;
   }
@@ -173,7 +173,7 @@ function cloneGrid(grid) { return grid.map((r) => [...r]); }
 // (1) 各段階の表示時間を全体的に延ばし、(2) 連鎖(同じ一撃の中で合体がさらに合体を呼ぶ)が
 // 2回目以降に入るたびに一拍の間(pauseステージ)を置いて、各合体がそれぞれ独立した出来事として
 // 見えるようにし、(3) 「CHAIN 2」「×3」のようなラベルをその場に浮かせて明示するようにした。
-const STAGE_DURATIONS = { hit: 190, merge: 280, pop: 320, gravity: 260, shift: 280, chainPause: 130 };
+const STAGE_DURATIONS = { hit: 190, merge: 280, gravity: 260, shift: 280, chainPause: 130 };
 
 function startAnimation(g) {
   const stages = [];
@@ -190,8 +190,6 @@ function startAnimation(g) {
       // 同時に吸収したブロックが多いほど、連鎖が深いほど、しっかり見えるよう長めに見せる。
       const duration = STAGE_DURATIONS.merge + Math.max(0, step.from.length - 1) * 80 + (mergeStepIndex - 1) * 60;
       stages.push({ kind: 'merge', from: step.from, at: step.at, value: step.value, duration, chainStep: mergeStepIndex });
-    } else if (step.type === 'pop') {
-      stages.push({ kind: 'pop', row: step.row, col: step.col, value: step.value, duration: STAGE_DURATIONS.pop });
     }
   }
   if (g.lastGravityMoves && Object.keys(g.lastGravityMoves).length) {
@@ -213,8 +211,6 @@ function applyStageEnd(grid, stage) {
   } else if (stage.kind === 'merge') {
     for (const f of stage.from) grid[f.row][f.col] = 0;
     grid[stage.at.row][stage.at.col] = stage.value;
-  } else if (stage.kind === 'pop') {
-    grid[stage.row][stage.col] = 0;
   } else if (stage.kind === 'gravity') {
     for (const col of Object.keys(stage.moves)) dropColumn(grid, Number(col), GRID_ROWS);
   } else if (stage.kind === 'shift') {
@@ -239,7 +235,7 @@ function advanceAnim(dtMs) {
 }
 
 // アニメーションの全段階が終わったときの後始末。クリア演出(オーバーレイ表示・祝福音・紙吹雪)は
-// ここまで遅らせることで、合体の様子をしっかり見せてから「ALL CLEAR」「NEW BEST」が出るようにする。
+// ここまで遅らせることで、合体の様子をしっかり見せてから「COMPLETE」「NEW BEST」が出るようにする。
 function finishAnimation() {
   restGrid = cloneGrid(game.grid);
   anim = null;
@@ -302,9 +298,6 @@ function buildAnimFrame() {
         scale: 0.85 + riseP * 0.25,
       };
     }
-  } else if (stage.kind === 'pop') {
-    skip.add(`${stage.row},${stage.col}`);
-    floaters.push({ x: cellX(stage.col), y: cellY(stage.row), value: stage.value, scale: 1 + p * 0.6, alpha: 1 - p, flash: 1 });
   } else if (stage.kind === 'gravity') {
     for (const [colStr, moves] of Object.entries(stage.moves)) {
       const col = Number(colStr);
