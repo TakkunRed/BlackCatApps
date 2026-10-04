@@ -1,6 +1,6 @@
 import {
   MegaMergeGame, FIELD_W, FIELD_H, GRID_ROWS, GRID_COLS, GRID_MARGIN_X, GRID_TOP_Y, CELL_W, CELL_H, CELL_GAP,
-  dropColumn, packColumnsLeft, cellX, cellY, frontmostRow,
+  SHOT_LIMIT, dropColumn, packColumnsLeft, cellX, cellY, frontmostRow, setGridSize, getBestShots,
 } from './game.js';
 import { drawField } from './render.js';
 
@@ -20,6 +20,7 @@ const targetVal = document.getElementById('targetVal');
 const shotsVal = document.getElementById('shotsVal');
 const btnPause = document.getElementById('btnPause');
 const btnSound = document.getElementById('btnSound');
+const sizeButtons = Array.from(document.querySelectorAll('.size-btn'));
 
 let audioCtx = null;
 function beep(freq, durationMs, type = 'square', gainVal = 0.05) {
@@ -47,6 +48,7 @@ function playEvents(events, g) {
       beep(440 + chain * 120, 90, 'sawtooth', 0.06);
     } else if (ev === 'pop') beep(1000, 220, 'triangle', 0.08);
     else if (ev === 'cleared') beep(700, 500, 'triangle', 0.07);
+    else if (ev === 'newBest') { beep(700, 300, 'triangle', 0.07); beep(1050, 400, 'triangle', 0.08); }
     else if (ev === 'gameOver') beep(90, 600, 'sawtooth', 0.08);
   }
 }
@@ -54,8 +56,20 @@ function playEvents(events, g) {
 function updateHud() {
   scoreVal.textContent = String(game.score);
   targetVal.textContent = game.parTarget != null ? String(game.parTarget) : '--';
-  shotsVal.textContent = String(game.shotsRemaining);
-  shotsVal.classList.toggle('danger', game.shotsRemaining <= 20);
+  shotsVal.textContent = `${game.shotsUsed}/${SHOT_LIMIT}`;
+  const overTarget = game.parTarget != null && game.shotsUsed > game.parTarget;
+  shotsVal.classList.toggle('over-target', overTarget);
+  shotsVal.classList.toggle('danger', game.shotsRemaining <= Math.round(SHOT_LIMIT * 0.15));
+}
+
+function refreshSizeButtons() {
+  for (const btn of sizeButtons) {
+    const rows = Number(btn.dataset.rows);
+    const cols = Number(btn.dataset.cols);
+    const best = getBestShots(rows, cols);
+    btn.querySelector('.size-best').textContent = best != null ? `BEST ${best}` : '--';
+    btn.classList.toggle('active', rows === GRID_ROWS && cols === GRID_COLS);
+  }
 }
 
 const OVERLAY_TEXT = {
@@ -73,7 +87,10 @@ function updateOverlay() {
   }
   overlay.classList.remove('hidden');
   const [title, sub] = OVERLAY_TEXT[game.phase] || OVERLAY_TEXT.idle;
-  overlayTitle.textContent = game.phase === 'ready' ? `HI-SCORE ${game.highScore}` : title;
+  const isNewBest = game.events && game.events.includes('newBest');
+  overlayTitle.textContent = game.phase === 'ready'
+    ? `HI-SCORE ${game.highScore}`
+    : (game.phase === 'cleared' && isNewBest ? 'NEW BEST!!' : title);
   if (game.phase === 'cleared') {
     const beat = game.parTarget != null && game.shotsUsed <= game.parTarget;
     const diff = game.parTarget != null ? Math.abs(game.shotsUsed - game.parTarget) : null;
@@ -82,7 +99,8 @@ function updateOverlay() {
       : beat
         ? `TARGET ${game.parTarget}発 達成!(${diff}発の余裕)`
         : `TARGET ${game.parTarget}発(あと${diff}発及ばず)`;
-    overlaySub.textContent = `SCORE ${game.score}  (${game.shotsUsed}発使用)\n${line2}\nタップしてもう一度`;
+    const line3 = `${game.rows}×${game.cols} 自己ベスト: ${game.bestShots}発${isNewBest ? ' (更新!)' : ''}`;
+    overlaySub.textContent = `SCORE ${game.score}  (${game.shotsUsed}発使用)\n${line2}\n${line3}\nタップしてもう一度`;
   } else if (game.phase === 'gameOver') {
     overlaySub.textContent = `SCORE ${game.score}  (${game.shotsUsed}発使用)\nタップしてもう一度`;
   } else {
@@ -93,6 +111,7 @@ function updateOverlay() {
 function onChange(g) {
   updateHud();
   updateOverlay();
+  refreshSizeButtons();
   if (g.events && g.events.length) playEvents(g.events, g);
 
   if (g.lastResolve && g.lastResolve !== lastSeenResolve) {
@@ -119,18 +138,30 @@ let anim = null;
 
 function cloneGrid(grid) { return grid.map((r) => [...r]); }
 
-const STAGE_DURATIONS = { hit: 150, merge: 190, pop: 240, gravity: 220, shift: 240 };
+// v5: 「連続合体したのか分からない」「もっとゆっくり、インパクトを付けて」という指摘を受け、
+// (1) 各段階の表示時間を全体的に延ばし、(2) 連鎖(同じ一撃の中で合体がさらに合体を呼ぶ)が
+// 2回目以降に入るたびに一拍の間(pauseステージ)を置いて、各合体がそれぞれ独立した出来事として
+// 見えるようにし、(3) 「CHAIN 2」「×3」のようなラベルをその場に浮かせて明示するようにした。
+const STAGE_DURATIONS = { hit: 190, merge: 280, pop: 320, gravity: 260, shift: 280, chainPause: 130 };
 
 function startAnimation(g) {
   const stages = [];
+  let mergeStepIndex = 0;
   for (const step of g.lastResolveSteps || []) {
-    if (step.type === 'hit') stages.push({ kind: 'hit', row: step.row, col: step.col, value: step.value, duration: STAGE_DURATIONS.hit });
-    else if (step.type === 'merge') {
-      // 同時に吸収したブロックが多いほど、一気に合体した感じがしっかり見えるよう長めに見せる。
-      const duration = STAGE_DURATIONS.merge + Math.max(0, step.from.length - 1) * 70;
-      stages.push({ kind: 'merge', from: step.from, at: step.at, value: step.value, duration });
+    if (step.type === 'hit') {
+      stages.push({ kind: 'hit', row: step.row, col: step.col, value: step.value, duration: STAGE_DURATIONS.hit });
+    } else if (step.type === 'merge') {
+      mergeStepIndex += 1;
+      if (mergeStepIndex >= 2) {
+        // 2回目以降の合体(=連鎖)の直前に一拍置いて、前の合体と混ざって見えないようにする。
+        stages.push({ kind: 'pause', duration: STAGE_DURATIONS.chainPause });
+      }
+      // 同時に吸収したブロックが多いほど、連鎖が深いほど、しっかり見えるよう長めに見せる。
+      const duration = STAGE_DURATIONS.merge + Math.max(0, step.from.length - 1) * 80 + (mergeStepIndex - 1) * 60;
+      stages.push({ kind: 'merge', from: step.from, at: step.at, value: step.value, duration, chainStep: mergeStepIndex });
+    } else if (step.type === 'pop') {
+      stages.push({ kind: 'pop', row: step.row, col: step.col, value: step.value, duration: STAGE_DURATIONS.pop });
     }
-    else if (step.type === 'pop') stages.push({ kind: 'pop', row: step.row, col: step.col, value: step.value, duration: STAGE_DURATIONS.pop });
   }
   if (g.lastGravityMoves && Object.keys(g.lastGravityMoves).length) {
     stages.push({ kind: 'gravity', moves: g.lastGravityMoves, duration: STAGE_DURATIONS.gravity });
@@ -179,9 +210,11 @@ function ease(p) { return 1 - Math.pow(1 - p, 2); } // easeOutQuad
 // 現在のアニメーション段階から、描画用の(グリッド上書き・スキップ対象・フローター)を組み立てる
 function buildAnimFrame() {
   const stage = anim.stages[anim.index];
-  const p = ease(Math.min(1, anim.t / stage.duration));
+  const rawP = Math.min(1, anim.t / stage.duration);
+  const p = ease(rawP);
   const skip = new Set();
   const floaters = [];
+  let chainLabel = null;
 
   if (stage.kind === 'hit') {
     skip.add(`${stage.row},${stage.col}`);
@@ -205,6 +238,23 @@ function buildAnimFrame() {
       const fx = cellX(f.col) + (cellX(stage.at.col) - cellX(f.col)) * p;
       const fy = cellY(f.row) + (cellY(stage.at.row) - cellY(f.row)) * p;
       floaters.push({ x: fx, y: fy, value: anim.grid[f.row][f.col], scale: shrink, alpha: shrink });
+    }
+
+    // 「連続合体した」「一気に合体した」ことを一目で分かるように、CHAIN/×N ラベルを浮かせる。
+    if (stage.chainStep >= 2 || stage.from.length >= 2) {
+      const parts = [];
+      if (stage.chainStep >= 2) parts.push(`CHAIN ${stage.chainStep}`);
+      if (stage.from.length >= 2) parts.push(`×${stage.from.length}`);
+      const fadeIn = Math.min(1, rawP / 0.25);
+      const fadeOut = rawP > 0.7 ? Math.max(0, 1 - (rawP - 0.7) / 0.3) : 1;
+      const riseP = ease(Math.min(1, rawP / 0.3));
+      chainLabel = {
+        text: parts.join('  '),
+        x: cellX(stage.at.col) + CELL_W / 2,
+        y: cellY(stage.at.row) - 6 - riseP * 10,
+        alpha: Math.min(fadeIn, fadeOut),
+        scale: 0.85 + riseP * 0.25,
+      };
     }
   } else if (stage.kind === 'pop') {
     skip.add(`${stage.row},${stage.col}`);
@@ -234,7 +284,7 @@ function buildAnimFrame() {
     }
   }
 
-  return { grid: anim.grid, skip, floaters };
+  return { grid: anim.grid, skip, floaters, chainLabel };
 }
 
 // --- 入力: 盤面上のどのブロックでも直接タップ/クリックすると即座に解決する ---
@@ -282,6 +332,20 @@ btnSound.addEventListener('click', () => {
   game.toggleSound();
   btnSound.textContent = game.soundOn ? '♪ SOUND' : '♪ MUTE';
 });
+
+// --- 盤面サイズの選択: 4×4 / 5×5 / 6×6。サイズごとに自己ベスト(最小ショット数)を記録する ---
+for (const btn of sizeButtons) {
+  btn.addEventListener('click', () => {
+    if (anim) return; // アニメーション再生中の切り替えは状態がずれるので無視する
+    const rows = Number(btn.dataset.rows);
+    const cols = Number(btn.dataset.cols);
+    if (rows === GRID_ROWS && cols === GRID_COLS && game.active) return;
+    setGridSize(rows, cols);
+    refreshSizeButtons();
+    game.start();
+  });
+}
+refreshSizeButtons();
 
 // --- キーボード: 数字キー1〜6でその列の一番手前のブロックを撃つ、Pで一時停止 ---
 window.addEventListener('keydown', (e) => {

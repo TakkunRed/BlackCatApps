@@ -9,6 +9,7 @@ const COLORS = {
   textLight: '#eafaf0',
   flash: '#ffffff',
   cellHover: 'rgba(167, 139, 250, 0.3)',
+  chainLabel: '#ffd34d',
 };
 
 function valueColor(v) {
@@ -18,29 +19,76 @@ function valueColor(v) {
   return `hsl(${hue}, 70%, ${light}%)`;
 }
 
+// valueColor()が返す hsl(h, s%, l%) の明度だけを変える(グラデーション・縁取り用)。
+function adjustLightness(hslStr, delta) {
+  const m = hslStr.match(/^hsl\(([\d.]+),\s*([\d.]+)%,\s*([\d.]+)%\)$/);
+  if (!m) return hslStr;
+  const [, h, s, l] = m;
+  const newL = Math.max(0, Math.min(100, Number(l) + delta));
+  return `hsl(${h}, ${s}%, ${newL}%)`;
+}
+
 // 1ブロックを描画する。scale/alpha/flash で演出(出現・消滅・強調)を表現できる。
+// 単色の平坦な見た目だと地味なので、縦グラデーション+縁取り+角丸で立体感を付ける。
 function drawBlock(ctx, x, y, value, { scale = 1, alpha = 1, flash = 0 } = {}) {
   if (alpha <= 0 || scale <= 0) return;
   const w = CELL_W * scale;
   const h = CELL_H * scale;
   const dx = x + (CELL_W - w) / 2;
   const dy = y + (CELL_H - h) / 2;
+  const r = Math.min(7, w * 0.14, h * 0.14);
+
+  const base = valueColor(value);
+  const path = new Path2D();
+  if (path.roundRect) path.roundRect(dx, dy, w, h, r);
+  else path.rect(dx, dy, w, h);
 
   ctx.save();
   ctx.globalAlpha = alpha;
-  ctx.fillStyle = valueColor(value);
-  ctx.fillRect(dx, dy, w, h);
+
+  const grad = ctx.createLinearGradient(dx, dy, dx, dy + h);
+  grad.addColorStop(0, adjustLightness(base, 13));
+  grad.addColorStop(1, adjustLightness(base, -9));
+  ctx.fillStyle = grad;
+  ctx.fill(path);
+
+  ctx.lineWidth = Math.max(1, w * 0.045);
+  ctx.strokeStyle = adjustLightness(base, -24);
+  ctx.stroke(path);
+
   if (flash > 0) {
     ctx.globalAlpha = alpha * flash;
     ctx.fillStyle = COLORS.flash;
-    ctx.fillRect(dx, dy, w, h);
+    ctx.fill(path);
     ctx.globalAlpha = alpha;
   }
+
   ctx.fillStyle = value >= 512 ? COLORS.textLight : COLORS.textDark;
-  ctx.font = value >= 1000 ? 'bold 11px "SFMono-Regular", Consolas, monospace' : 'bold 13px "SFMono-Regular", Consolas, monospace';
+  const fontScale = value >= 1000 ? 0.30 : 0.40;
+  const fontSize = Math.max(9, Math.floor(CELL_W * fontScale));
+  ctx.font = `bold ${fontSize}px "SFMono-Regular", Consolas, monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(String(value), dx + w / 2, dy + h / 2 + 1);
+  ctx.restore();
+}
+
+// 「CHAIN 2」「×3」のような、連鎖・同時合体を知らせるラベルをブロックの上に浮かせて描く。
+function drawChainLabel(ctx, label) {
+  if (!label || label.alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = label.alpha;
+  ctx.translate(label.x, label.y);
+  ctx.scale(label.scale, label.scale);
+  const fontSize = Math.max(11, Math.floor(CELL_W * 0.34));
+  ctx.font = `bold ${fontSize}px "SFMono-Regular", Consolas, monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = Math.max(2, fontSize * 0.22);
+  ctx.strokeStyle = 'rgba(5, 8, 10, 0.85)';
+  ctx.strokeText(label.text, 0, 0);
+  ctx.fillStyle = COLORS.chainLabel;
+  ctx.fillText(label.text, 0, 0);
   ctx.restore();
 }
 
@@ -81,6 +129,10 @@ function drawField(ctx, g, anim, hoverCell) {
     for (const f of anim.floaters) {
       drawBlock(ctx, f.x, f.y, f.value, f);
     }
+  }
+
+  if (anim && anim.chainLabel) {
+    drawChainLabel(ctx, anim.chainLabel);
   }
 }
 

@@ -14,6 +14,21 @@
 <body>
 <main class="stage">
   <div class="cabinet">
+    <div class="size-select" id="sizeSelect">
+      <button class="size-btn" data-rows="4" data-cols="4">
+        <span class="size-label">4×4</span>
+        <span class="size-best">--</span>
+      </button>
+      <button class="size-btn" data-rows="5" data-cols="5">
+        <span class="size-label">5×5</span>
+        <span class="size-best">--</span>
+      </button>
+      <button class="size-btn" data-rows="6" data-cols="6">
+        <span class="size-label">6×6</span>
+        <span class="size-best">--</span>
+      </button>
+    </div>
+
     <div class="hud">
       <div class="hud-block">
         <span class="hud-label">SCORE</span>
@@ -24,7 +39,7 @@
         <span class="hud-val" id="targetVal">--</span>
       </div>
       <div class="hud-block">
-        <span class="hud-label">SHOTS LEFT</span>
+        <span class="hud-label">USED</span>
         <span class="hud-val" id="shotsVal">0</span>
       </div>
     </div>

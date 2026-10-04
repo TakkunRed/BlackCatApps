@@ -6,10 +6,13 @@ if (typeof globalThis.localStorage === 'undefined') {
   };
 }
 
+const gameModule = await import('../js/game.js');
 const {
   MegaMergeGame, GRID_ROWS, GRID_COLS, SHOT_LIMIT,
-  simulateShot, estimateParShots, occupiedCells,
-} = await import('../js/game.js');
+  simulateShot, estimateParShots, occupiedCells, setGridSize, getBestShots,
+} = gameModule;
+// GRID_ROWS/GRID_COLS/SHOT_LIMIT は setGridSize() で書き換わる値なので、切り替え後は
+// 分割代入した定数(切り替え前のスナップショット)ではなく gameModule.XXX を直接読むこと。
 
 function assert(cond, label) {
   console.log(`${cond ? 'PASS' : 'FAIL'} ${label}`);
@@ -447,5 +450,58 @@ const BOTTOM = GRID_ROWS - 1;
   assert(g.parTarget < SHOT_LIMIT, 'the par estimate for a typical board is comfortably under the shot limit');
   g.quit();
 }
+
+// setGridSize(): 盤面サイズを切り替えると、GRID_ROWS/GRID_COLS/SHOT_LIMIT/CELL_W/CELL_H が追従する
+{
+  setGridSize(4, 4);
+  assert(gameModule.GRID_ROWS === 4 && gameModule.GRID_COLS === 4, 'setGridSize updates GRID_ROWS/GRID_COLS');
+  assert(gameModule.SHOT_LIMIT < SHOT_LIMIT, 'a smaller board gets a proportionally smaller shot limit than the 6x6 default');
+  assert(gameModule.CELL_W > 40, 'a 4x4 board gets noticeably bigger cells than the 6x6 default (~35.7px)');
+
+  const g = new MegaMergeGame(() => {});
+  g.start({ skipReady: true });
+  assert(g.grid.length === 4 && g.grid[0].length === 4, 'the grid is actually resized to 4x4');
+  assert(g.blockCount === 16, 'every cell of the 4x4 board starts occupied');
+  assert(g.rows === 4 && g.cols === 4, 'the game instance remembers which size it was started at');
+  g.quit();
+}
+
+// 自己ベスト(最小ショット数)はサイズごとに個別に記録される
+{
+  setGridSize(4, 4);
+  assert(getBestShots(4, 4) === null, 'no best record exists yet for a freshly-used size');
+
+  let captured = null;
+  const g = new MegaMergeGame((inst) => { captured = [...inst.events]; });
+  g.start({ skipReady: true });
+  g.grid = Array.from({ length: 4 }, () => Array(4).fill(0));
+  g.grid[0][0] = 1024; // 撃つと2048に到達してポップ、盤面唯一のブロックなのでクリア
+  g.shoot(0, 0);
+  assert(g.phase === 'cleared', 'sanity: the 4x4 board clears in a single shot');
+  assert(getBestShots(4, 4) === 1, 'clearing in 1 shot sets the 4x4 best record to 1');
+  assert(g.bestShots === 1, 'the game instance reflects the new best immediately (no reload needed)');
+  assert(captured.includes('newBest'), 'a newBest event fires the first time a size is cleared');
+  g.quit();
+}
+
+// 自己ベストは「それより少ない」場合だけ更新され、同数や悪化では更新されない
+{
+  setGridSize(4, 4); // 前のテストで 4x4 の自己ベストは 1 になっている
+  let captured = null;
+  const g = new MegaMergeGame((inst) => { captured = [...inst.events]; });
+  g.start({ skipReady: true });
+  g.grid = Array.from({ length: 4 }, () => Array(4).fill(0));
+  g.grid[0][0] = 1024;
+  g.grid[3][3] = 1024; // 対角の離れた位置に置き、隣接しないので合体せず2発必要になるようにする
+  g.shoot(0, 0); // 1発目: 単独直撃で2048に到達しポップ。列0が空になるので水平圧縮が起き、
+  // 列3にあったもう一方のブロックは列0へ詰め直される(行は3のまま)。
+  g.shoot(3, 0); // 2発目: 詰め直された残る唯一のブロックを直撃、2048に到達しポップして盤面が空になる
+  assert(g.phase === 'cleared', 'sanity: this setup clears in exactly 2 shots');
+  assert(getBestShots(4, 4) === 1, 'a worse (2-shot) clear does not overwrite the existing 1-shot best');
+  assert(!captured.includes('newBest'), 'no newBest event fires when the result does not beat the record');
+  g.quit();
+}
+
+setGridSize(6, 6); // 既定サイズに戻し、以降このモジュールを再importする他のテストに影響を残さない
 
 console.log('done');

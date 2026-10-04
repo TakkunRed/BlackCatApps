@@ -24,27 +24,72 @@
 //      隣接1個だけを選んで消費する方式から、その時点の値と一致する隣接ブロックを(複数あれば)
 //      同時に全部まとめて吸収する方式に変更した。スコアは吸収した個数ぶん個別に連鎖ボーナスが
 //      積み上がるので、一気に合体するほど見た目も得点もダイナミックになる。
+// v5では、以下2点を見直した:
+//   1) 盤面サイズを4×4・5×5・6×6から選べるようにし、サイズごとの自己ベスト(最小ショット数)を
+//      記録・表示できるようにした(「サイズごとにランキングしたい」という要望を受けて)。
+//      グリッドサイズは setGridSize() でモジュール全体の可変状態として切り替える(ESモジュールの
+//      ライブバインディングにより、他ファイルからの import 先でも常に最新値が見える)。
+//   2) ショット上限はサイズに比例して自動調整する(6×6=130発を基準比率として縮尺)。
 
 export const FIELD_W = 240;
 export const FIELD_H = 280;
 
-export const GRID_ROWS = 6;
-export const GRID_COLS = 6;
 export const GRID_MARGIN_X = 8;
 export const GRID_TOP_Y = 18;
 export const CELL_GAP = 2;
-export const CELL_W = (FIELD_W - GRID_MARGIN_X * 2 - CELL_GAP * (GRID_COLS - 1)) / GRID_COLS;
-export const CELL_H = 38;
 
 const POP_THRESHOLD = 2048;
 const POP_BONUS = 500;
 const CHAIN_MULT_STEP = 0.5; // 連鎖1回ごとに乗率+0.5
-const SHOT_LIMIT = 130; // シミュレーションで調整した弾数上限
+const SHOT_LIMIT_PER_CELL = 130 / 36; // 6×6=130発で調整した弾数上限を基準にした、1マスあたりの比率
 
 const SEED_VALUES = [2, 2, 2, 4, 4, 8]; // 初期盤面の重み付き候補値
 
 const READY_SCREEN_MS = 1200;
 const HIGH_SCORE_KEY = 'megaMerge.highScore';
+const BEST_SHOTS_KEY_PREFIX = 'megaMerge.best.';
+
+function computeCellW(cols) {
+  return (FIELD_W - GRID_MARGIN_X * 2 - CELL_GAP * (cols - 1)) / cols;
+}
+function computeCellH(rows) {
+  // 上下の余白をGRID_TOP_Yで揃え、残りの高さを行数いっぱいに使う。
+  const usableH = FIELD_H - GRID_TOP_Y * 2;
+  return (usableH - CELL_GAP * (rows - 1)) / rows;
+}
+
+export let GRID_ROWS = 6;
+export let GRID_COLS = 6;
+export let CELL_W = computeCellW(GRID_COLS);
+export let CELL_H = computeCellH(GRID_ROWS);
+export let SHOT_LIMIT = Math.round(GRID_ROWS * GRID_COLS * SHOT_LIMIT_PER_CELL);
+
+// 盤面サイズを切り替える。GRID_ROWS/GRID_COLS/CELL_W/CELL_H/SHOT_LIMIT はESモジュールの
+// ライブバインディングとしてエクスポートされているため、呼び出し後は他ファイルのimport先にも
+// 即座に反映される。新しいゲームを start() する前に呼ぶこと。
+export function setGridSize(rows, cols) {
+  GRID_ROWS = rows;
+  GRID_COLS = cols;
+  CELL_W = computeCellW(cols);
+  CELL_H = computeCellH(rows);
+  SHOT_LIMIT = Math.round(rows * cols * SHOT_LIMIT_PER_CELL);
+}
+
+function bestShotsKey(rows, cols) {
+  return `${BEST_SHOTS_KEY_PREFIX}${rows}x${cols}`;
+}
+export function getBestShots(rows, cols) {
+  const v = localStorage.getItem(bestShotsKey(rows, cols));
+  return v == null ? null : Number(v);
+}
+function setBestShotsIfRecord(rows, cols, shots) {
+  const current = getBestShots(rows, cols);
+  if (current == null || shots < current) {
+    localStorage.setItem(bestShotsKey(rows, cols), String(shots));
+    return true;
+  }
+  return false;
+}
 
 // 隣接探索の優先順: 上→右→下→左
 const NEIGHBOR_ORDER = [
@@ -287,6 +332,9 @@ class MegaMergeGame {
     this.shotsUsed = 0;
     this.events = [];
     this._clearReadyTimer();
+    this.rows = GRID_ROWS;
+    this.cols = GRID_COLS;
+    this.bestShots = getBestShots(this.rows, this.cols);
     this._setupGrid();
     this.parTarget = estimateParShots(this.grid);
   }
@@ -403,7 +451,9 @@ class MegaMergeGame {
 
   _cleared() {
     this.phase = 'cleared';
-    this.events.push('cleared');
+    const isNewBest = setBestShotsIfRecord(this.rows, this.cols, this.shotsUsed);
+    if (isNewBest) this.bestShots = this.shotsUsed;
+    this.events.push(isNewBest ? 'newBest' : 'cleared');
     this._saveHighScoreIfRecord();
   }
 
@@ -427,7 +477,7 @@ class MegaMergeGame {
 }
 
 export {
-  MegaMergeGame, POP_THRESHOLD, POP_BONUS, SHOT_LIMIT,
+  MegaMergeGame, POP_THRESHOLD, POP_BONUS,
   dropColumn, packColumnsLeft, resolveHitPure, simulateShot, estimateParShots,
   frontmostRow, occupiedColumns, occupiedCells, countBlocks,
 };
