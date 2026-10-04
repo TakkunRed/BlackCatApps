@@ -15,6 +15,10 @@ const ctx = canvas.getContext('2d');
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlayTitle');
 const overlaySub = document.getElementById('overlaySub');
+const clearStats = document.getElementById('clearStats');
+const clearShotsVal = document.getElementById('clearShotsVal');
+const clearBestSize = document.getElementById('clearBestSize');
+const clearBestVal = document.getElementById('clearBestVal');
 const scoreVal = document.getElementById('scoreVal');
 const bestVal = document.getElementById('bestVal');
 const shotsVal = document.getElementById('shotsVal');
@@ -111,11 +115,14 @@ function updateOverlay() {
   const isNewBest = game.phase === 'cleared' && lastClearWasNewBest;
   overlayTitle.textContent = game.phase === 'ready' ? `HI-SCORE ${game.highScore}` : (isNewBest ? 'NEW BEST!!' : title);
   overlayTitle.classList.toggle('celebrate', isNewBest);
+  clearStats.classList.toggle('hidden', game.phase !== 'cleared');
   if (game.phase === 'cleared') {
-    const finalValue = game.lastResolve ? game.lastResolve.finalValue : null;
-    const line1 = finalValue != null ? `最後の1個: ${finalValue}  SCORE ${game.score}  (${game.shotsUsed}発使用)` : `SCORE ${game.score}  (${game.shotsUsed}発使用)`;
-    const line2 = `${game.rows}×${game.cols} 自己ベスト: ${game.bestShots}発${isNewBest ? ' (更新!)' : ''}`;
-    overlaySub.textContent = `${line1}\n${line2}\nタップしてもう一度`;
+    // ショット数を主役として大きく見せ、自己ベストは「4×4 BEST 7」のような縦長バッジに留める。
+    // SCORE・最後の1個の値・自己ベストの文章表現はもう出さない。
+    clearShotsVal.textContent = String(game.shotsUsed);
+    clearBestSize.textContent = `${game.rows}×${game.cols}`;
+    clearBestVal.textContent = String(game.bestShots);
+    overlaySub.textContent = 'タップしてもう一度';
   } else {
     overlaySub.textContent = sub;
   }

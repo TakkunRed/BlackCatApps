@@ -190,6 +190,64 @@ body {
   white-space: pre-line;
 }
 
+/* クリア画面: ショット数を主役にして大きく見せ、自己ベストは縦長のバッジとして添える */
+.clear-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.clear-stats.hidden { display: none; }
+
+.clear-shots-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--violet-dim);
+}
+
+.clear-shots-value {
+  font-size: 58px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--violet);
+  text-shadow: 0 0 16px rgba(167, 139, 250, 0.65);
+}
+
+.clear-best-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  margin-top: 10px;
+  padding: 10px 22px 12px;
+  border-radius: 14px;
+  background: rgba(167, 139, 250, 0.1);
+  box-shadow: 0 0 0 1px rgba(167, 139, 250, 0.3) inset;
+}
+
+.clear-best-size {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--white);
+  opacity: 0.85;
+}
+
+.clear-best-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--violet-dim);
+}
+
+.clear-best-value {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--violet);
+}
+
 .secondary-controls {
   display: flex;
   justify-content: center;
