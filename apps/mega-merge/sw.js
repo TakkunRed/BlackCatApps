@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mega-merge-v1';
+const CACHE_NAME = 'mega-merge-v2';
 const APP_SHELL = [
   './',
   './index.html',
@@ -8,6 +8,7 @@ const APP_SHELL = [
   './js/render.js',
   './manifest.json',
   './icons/icon.svg',
+  './icons/cat-logo.png',
 ];
 
 self.addEventListener('install', (event) => {

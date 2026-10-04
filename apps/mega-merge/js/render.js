@@ -5,18 +5,22 @@ import {
 
 const COLORS = {
   bg: '#05080a',
-  textDark: '#1c1d1f',
   textLight: '#eafaf0',
   flash: '#ffffff',
   cellHover: 'rgba(167, 139, 250, 0.3)',
   chainLabel: '#ffd34d',
 };
 
+const GOLDEN_ANGLE = 137.50776; // 隣り合う値同士の色相をできるだけ離すための黄金角
+
 function valueColor(v) {
   const exp = Math.round(Math.log2(v)); // 2->1, 4->2, ... 2048->11
-  const hue = (210 - exp * 18 + 360) % 360; // 青系(低い値)→暖色(高い値)
-  const light = exp >= 9 ? 58 : 50;
-  return `hsl(${hue}, 70%, ${light}%)`;
+  // 黄金角刻みにすることで、序盤によく出る小さい指数(1,2,3...)の時点から
+  // 赤・緑・青・紫・黄色と幅広い色相に散らばるようにする(単純な等間隔刻みだと
+  // 序盤の値が近い色相に固まってしまい、地味に見えていたため)。
+  const hue = ((exp * GOLDEN_ANGLE) % 360 + 360) % 360;
+  const light = exp % 2 === 0 ? 55 : 48; // 隣接する指数でも明暗差が出るようにする
+  return `hsl(${hue}, 78%, ${light}%)`;
 }
 
 // valueColor()が返す hsl(h, s%, l%) の明度だけを変える(グラデーション・縁取り用)。
@@ -30,7 +34,8 @@ function adjustLightness(hslStr, delta) {
 
 // 1ブロックを描画する。scale/alpha/flash で演出(出現・消滅・強調)を表現できる。
 // 単色の平坦な見た目だと地味なので、縦グラデーション+縁取り+角丸で立体感を付ける。
-function drawBlock(ctx, x, y, value, { scale = 1, alpha = 1, flash = 0 } = {}) {
+// catImg が渡され、かつ読み込み済みなら、数字の代わりに黒猫ロゴを描く(盤面最後の1個の演出用)。
+function drawBlock(ctx, x, y, value, { scale = 1, alpha = 1, flash = 0, catImg = null } = {}) {
   if (alpha <= 0 || scale <= 0) return;
   const w = CELL_W * scale;
   const h = CELL_H * scale;
@@ -63,17 +68,34 @@ function drawBlock(ctx, x, y, value, { scale = 1, alpha = 1, flash = 0 } = {}) {
     ctx.globalAlpha = alpha;
   }
 
-  ctx.fillStyle = value >= 512 ? COLORS.textLight : COLORS.textDark;
-  // ポップ廃止で値の桁数に上限が無くなったため、固定の桁数区分ではなく実際の桁数から
-  // 「このセル幅に収まる最大サイズ」を逆算する(何桁になっても枠からはみ出さないように)。
-  const digits = String(value).length;
-  const maxTextWidth = w * 0.86;
-  const fitSize = Math.floor(maxTextWidth / (digits * 0.58));
-  const fontSize = Math.max(7, Math.min(fitSize, Math.floor(CELL_W * 0.46)));
-  ctx.font = `bold ${fontSize}px "SFMono-Regular", Consolas, monospace`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(String(value), dx + w / 2, dy + h / 2 + 1);
+  if (catImg && catImg.complete && catImg.naturalWidth > 0) {
+    const pad = Math.min(w, h) * 0.12;
+    const size = Math.min(w, h) - pad * 2;
+    const ix = dx + (w - size) / 2;
+    const iy = dy + (h - size) / 2;
+    const imgPath = new Path2D();
+    if (imgPath.roundRect) imgPath.roundRect(ix, iy, size, size, r * 0.6);
+    else imgPath.rect(ix, iy, size, size);
+    ctx.save();
+    ctx.clip(imgPath);
+    ctx.drawImage(catImg, ix, iy, size, size);
+    ctx.restore();
+  } else {
+    // 色相を虹色に広げたぶん、数字の色を背景ごとに出し分けるのが難しくなったため、
+    // 明るい縁取り+ほぼ白の塗りで、どの背景色でも読めるようにする。
+    const digits = String(value).length;
+    const maxTextWidth = w * 0.86;
+    const fitSize = Math.floor(maxTextWidth / (digits * 0.58));
+    const fontSize = Math.max(7, Math.min(fitSize, Math.floor(CELL_W * 0.46)));
+    ctx.font = `bold ${fontSize}px "SFMono-Regular", Consolas, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = Math.max(1.5, fontSize * 0.17);
+    ctx.strokeStyle = 'rgba(5, 8, 10, 0.55)';
+    ctx.strokeText(String(value), dx + w / 2, dy + h / 2 + 1);
+    ctx.fillStyle = COLORS.textLight;
+    ctx.fillText(String(value), dx + w / 2, dy + h / 2 + 1);
+  }
   ctx.restore();
 }
 
@@ -104,8 +126,9 @@ function drawChainLabel(ctx, label) {
  *   - skip: Set<'row,col'> 通常描画をスキップするセル(floaterで個別に描くため)
  *   - floaters: [{x, y, value, scale, alpha, flash}] ピクセル座標で個別に描く要素
  * @param {{row:number, col:number}|null} [hoverCell] タップ可能であることを示すホバー中のマス(nullで非表示)
+ * @param {HTMLImageElement|null} [catImg] 盤面が最後の1個になったときに表示する黒猫ロゴ(読み込み前はnull扱い)
  */
-function drawField(ctx, g, anim, hoverCell) {
+function drawField(ctx, g, anim, hoverCell, catImg) {
   ctx.clearRect(0, 0, FIELD_W, FIELD_H);
   ctx.fillStyle = COLORS.bg;
   ctx.fillRect(0, 0, FIELD_W, FIELD_H);
@@ -120,12 +143,22 @@ function drawField(ctx, g, anim, hoverCell) {
   const grid = (anim && anim.grid) || g.grid;
   const skip = (anim && anim.skip) || null;
 
+  // 盤面が最後の1個まで集約されたら、その1マスにだけ黒猫ロゴを表示する。
+  let lastRow = -1, lastCol = -1, blockTotal = 0;
+  for (let row = 0; row < GRID_ROWS; row++) {
+    for (let col = 0; col < GRID_COLS; col++) {
+      if (grid[row][col]) { blockTotal++; lastRow = row; lastCol = col; }
+    }
+  }
+  const soleCell = blockTotal === 1 ? `${lastRow},${lastCol}` : null;
+
   for (let row = 0; row < GRID_ROWS; row++) {
     for (let col = 0; col < GRID_COLS; col++) {
       const v = grid[row][col];
       if (!v) continue;
       if (skip && skip.has(`${row},${col}`)) continue;
-      drawBlock(ctx, cellX(col), cellY(row), v);
+      const isSole = soleCell === `${row},${col}`;
+      drawBlock(ctx, cellX(col), cellY(row), v, isSole ? { catImg } : undefined);
     }
   }
 

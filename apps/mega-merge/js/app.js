@@ -12,6 +12,11 @@ canvas.width = FIELD_W;
 canvas.height = FIELD_H;
 const ctx = canvas.getContext('2d');
 
+// 盤面が最後の1個になったときに表示する黒猫ロゴ(BlackCatAppsのマスコット)。
+// 読み込み完了前はrender.js側が自動的に数字描画にフォールバックする。
+const catImg = new Image();
+catImg.src = './icons/cat-logo.png';
+
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlayTitle');
 const overlaySub = document.getElementById('overlaySub');
@@ -53,15 +58,23 @@ function playImmediateEvents(events) {
   if (events.includes('shoot')) beep(500, 40, 'square', 0.03);
 }
 
+// 「1つはド、2つはレ、3つはミ…」と音階で合体の深さを表す(ハ長調、C4から2オクターブ分)。
+// depthがこの範囲を超える場合は最後の音を鳴らし続ける。
+const MERGE_SCALE_HZ = [
+  261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88, // ド レ ミ ファ ソ ラ シ
+  523.25, 587.33, 659.25, 698.46, 783.99, 880.00, 987.77, // ド レ ミ ファ ソ ラ シ(1オクターブ上)
+];
+
 // 合体アニメーションの各段階が始まるタイミングで鳴らす効果音。連鎖が深いほど・同時吸収が
-// 多いほど音程と音量を上げ、「何連鎖したか」を耳でも感じられるようにする。
+// 多いほど音階を一段ずつ上げ、「何連鎖したか」を耳でも感じられるようにする。
 function playStageSound(stage) {
   if (!stage) return;
   if (stage.kind === 'hit') {
     beep(320, 60, 'square', 0.04);
   } else if (stage.kind === 'merge') {
     const depth = (stage.chainStep || 1) + (stage.from.length - 1);
-    beep(420 + depth * 130, 90, 'sawtooth', Math.min(0.095, 0.05 + depth * 0.009));
+    const freq = MERGE_SCALE_HZ[Math.min(depth - 1, MERGE_SCALE_HZ.length - 1)];
+    beep(freq, 150, 'triangle', Math.min(0.1, 0.06 + depth * 0.006));
   }
 }
 
@@ -476,9 +489,9 @@ function loop(t) {
 
   if (anim) {
     advanceAnim(dt * 1000);
-    drawField(ctx, game, anim && buildAnimFrame(), hoverCell);
+    drawField(ctx, game, anim && buildAnimFrame(), hoverCell, catImg);
   } else {
-    drawField(ctx, game, null, hoverCell);
+    drawField(ctx, game, null, hoverCell, catImg);
   }
   if (confetti) updateAndDrawConfetti(dt);
   requestAnimationFrame(loop);
